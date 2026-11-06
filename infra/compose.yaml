@@ -68,7 +68,70 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  keycloak:
+    # Versão: Keycloak 26.8.2, última release estável em
+    # https://github.com/keycloak/keycloak/releases (lançada em 2026-11-05);
+    # tag em https://quay.io/repository/keycloak/keycloak. Conferido em
+    # 2026-11-06 (TD-007).
+    image: quay.io/keycloak/keycloak:26.8.2
+    # Modo produção: sem listener HTTP, só HTTPS com o certificado da AC local
+    # (FR-006; INFRA 5.7, 5.8). O realm entra pela importação, que é ignorada
+    # quando o realm já existe no volume (TD-005).
+    command: ["start", "--import-realm"]
+    environment:
+      KC_HTTP_ENABLED: "false"
+      KC_HTTPS_PORT: "8443"
+      KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/conf/tls/keycloak.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/conf/tls/keycloak.key
+      # Emissor fixo (`iss`) no endereço que o cliente técnico usa pelo host;
+      # a publicação em 127.0.0.1:8443 fica com 001-T5. As APIs buscam o JWKS
+      # pelo nome interno `keycloak` (backchannel dinâmico).
+      KC_HOSTNAME: https://localhost:8443
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+      # Instância única: banco embutido no volume e cache local, sem cluster.
+      # O banco embutido é desaconselhado para produção; aqui atende o
+      # ambiente local de um nó só (INFRA - Fora do escopo: alta
+      # disponibilidade).
+      KC_DB: dev-file
+      KC_CACHE: local
+      # Readiness em HTTP só no loopback do contêiner: nenhum outro contêiner
+      # alcança a interface de gerenciamento, e o tráfego de rede continua
+      # exclusivamente em TLS (FR-006, FR-009).
+      KC_HEALTH_ENABLED: "true"
+      KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_HTTP_MANAGEMENT_HOST: 127.0.0.1
+      # Administração no realm master, separada dos clientes técnicos do realm
+      # cashflow (FR-005; INFRA 5.11). Usado só na criação do realm master.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin-cashflow
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_SENHA_ADMIN:?defina KEYCLOAK_SENHA_ADMIN em infra/.env}
+      # Lidos pelos placeholders de realm-cashflow.json na importação; depois
+      # dela, o segredo vigente é o gravado no volume (TD-005).
+      KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS: ${KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS:?defina KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS em infra/.env}
+      KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS: ${KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS:?defina KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS em infra/.env}
+    volumes:
+      - vol-keycloak:/opt/keycloak/data
+      - ./keycloak/realm-cashflow.json:/opt/keycloak/data/import/realm-cashflow.json:ro
+      # Gerados por infra/tls/gerar-certificados.sh (001-T3). A chave tem modo
+      # 0640 e pertence ao usuário que gerou; o contêiner roda com UID 1000.
+      - ./tls/gerados/keycloak.crt:/opt/keycloak/conf/tls/keycloak.crt:ro
+      - ./tls/gerados/keycloak.key:/opt/keycloak/conf/tls/keycloak.key:ro
+    healthcheck:
+      # Pronto = /health/ready com 200, não só processo vivo (INFRA 8.5). A
+      # imagem não traz curl; a requisição sai pelo /dev/tcp do bash.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/127.0.0.1/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          head -n 1 <&3 | grep -q ' 200 '
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+
 volumes:
   vol-pg-livro:
   vol-pg-consolidado:
   vol-rabbitmq:
+  vol-keycloak:

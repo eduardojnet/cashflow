@@ -1,0 +1,96 @@
+{
+  "realm": "cashflow",
+  "displayName": "CashFlow",
+  "enabled": true,
+  "sslRequired": "all",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "rememberMe": false,
+  "loginWithEmailAllowed": false,
+  "bruteForceProtected": true,
+  "defaultSignatureAlgorithm": "RS256",
+  "accessTokenLifespan": 300,
+  "clientScopes": [
+    {
+      "name": "lancamentos:registrar",
+      "description": "Registrar lançamentos (INFRA 5.4)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "lancamentos:consultar",
+      "description": "Consultar lançamentos (002 Q-001)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    },
+    {
+      "name": "consolidado:consultar",
+      "description": "Consultar o consolidado diário (INFRA 5.4)",
+      "protocol": "openid-connect",
+      "attributes": {
+        "include.in.token.scope": "true",
+        "display.on.consent.screen": "false"
+      }
+    }
+  ],
+  "defaultDefaultClientScopes": [],
+  "defaultOptionalClientScopes": [],
+  "clients": [
+    {
+      "clientId": "cliente-lancamentos",
+      "name": "Cliente técnico de registro de lançamentos",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "frontchannelLogout": false,
+      "fullScopeAllowed": false,
+      "consentRequired": false,
+      "defaultClientScopes": ["lancamentos:registrar"],
+      "optionalClientScopes": [],
+      "attributes": {
+        "access.token.signed.response.alg": "RS256",
+        "client_credentials.use_refresh_token": "false",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "oidc.ciba.grant.enabled": "false"
+      }
+    },
+    {
+      "clientId": "cliente-consultas",
+      "name": "Cliente técnico de consultas",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "frontchannelLogout": false,
+      "fullScopeAllowed": false,
+      "consentRequired": false,
+      "defaultClientScopes": ["consolidado:consultar", "lancamentos:consultar"],
+      "optionalClientScopes": [],
+      "attributes": {
+        "access.token.signed.response.alg": "RS256",
+        "client_credentials.use_refresh_token": "false",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "oidc.ciba.grant.enabled": "false"
+      }
+    }
+  ]
+}
