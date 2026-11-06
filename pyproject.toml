@@ -1,0 +1,13 @@
+# Raiz do workspace uv (Eduardo, ST-Q-001). Não é pacote instalável: só
+# fixa a versão do Python (INFRA 1.3) e agrega os membros. Cada serviço e
+# pacote compartilhado entra em `members` ao receber o próprio pyproject.toml.
+[project]
+name = "cashflow"
+version = "0.1.0"
+requires-python = ">=3.12,<3.13"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = []
