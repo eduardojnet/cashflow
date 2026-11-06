@@ -15,8 +15,8 @@ Com `on_return_raises=False`, o aiormq entrega a mensagem devolvida como
 resultado do publish, sem exceção; o Ack que o broker manda depois do Return
 é descartado pelo aiormq. Nack chega como `DeliveryError`.
 
-Falha de conexão ou de canal propaga: o evento continua pendente e o lease
-vence (design 003 §8). O tratamento dessas falhas é de 003-T3.
+Falha de conexão ou de canal propaga: o ciclo de publicação a registra e
+reagenda o evento, que continua pendente (003-T3; design 003 §8).
 """
 
 import json

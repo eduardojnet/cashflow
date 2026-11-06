@@ -1,25 +1,34 @@
-"""Ciclo de publicação sem infraestrutura (003-T2; FR-002).
+"""Ciclo de publicação sem infraestrutura (003-T2, 003-T3; FR-002, FR-003).
 
 Portas falsas registram a ordem das chamadas: marcar vem sempre depois do
-confirm do mesmo evento, e só o confirm positivo sem return marca.
+confirm do mesmo evento, só o confirm positivo sem return marca, e todo outro
+desfecho reagenda o evento pela política de retentativa, sem removê-lo.
 """
 
 import asyncio
+import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from relay.aplicacao import EventoReservado, PublicarPendentes, ResultadoPublicacao
+from relay.aplicacao import (
+    EventoReservado,
+    PoliticaRetentativa,
+    PublicarPendentes,
+    ResultadoPublicacao,
+)
+
+POLITICA = PoliticaRetentativa(base=timedelta(seconds=1), teto=timedelta(minutes=1))
 
 
-def _evento(posicao: int) -> EventoReservado:
+def _evento(posicao: int, tentativas: int = 0) -> EventoReservado:
     evento_id = uuid.uuid4()
     return EventoReservado(
         evento_id=evento_id,
         posicao=posicao,
         tipo_evento="LancamentoRegistrado",
-        payload={"evento_id": str(evento_id), "posicao": posicao},
-        tentativas=0,
+        payload={"evento_id": str(evento_id), "posicao": posicao, "valor": "25.40"},
+        tentativas=tentativas,
         lease_ate=datetime(2026, 11, 6, tzinfo=UTC),
     )
 
@@ -33,6 +42,7 @@ class _Portas:
         self._eventos = eventos
         self._resultados = resultados
         self.chamadas: list[tuple[str, uuid.UUID]] = []
+        self.esperas: dict[uuid.UUID, timedelta] = {}
 
     async def reservar(self) -> list[EventoReservado]:
         return self._eventos
@@ -47,12 +57,23 @@ class _Portas:
     async def marcar_publicado(self, evento_id: uuid.UUID) -> None:
         self.chamadas.append(("marcar", evento_id))
 
+    async def reagendar(self, evento: EventoReservado, espera: timedelta) -> None:
+        self.chamadas.append(("reagendar", evento.evento_id))
+        self.esperas[evento.evento_id] = espera
+
     def caso(self) -> PublicarPendentes:
-        return PublicarPendentes(self, self, self)
+        return PublicarPendentes(self, self, self, POLITICA)
+
+    def _com(self, nome: str) -> list[uuid.UUID]:
+        return [evento for chamada, evento in self.chamadas if chamada == nome]
 
     @property
     def marcados(self) -> list[uuid.UUID]:
-        return [evento for chamada, evento in self.chamadas if chamada == "marcar"]
+        return self._com("marcar")
+
+    @property
+    def reagendados(self) -> list[uuid.UUID]:
+        return self._com("reagendar")
 
 
 def test_confirmado_e_marcado_logo_apos_o_proprio_confirm() -> None:
@@ -83,7 +104,7 @@ def test_confirmado_e_marcado_logo_apos_o_proprio_confirm() -> None:
     ],
     ids=lambda resultado: resultado.value,
 )
-def test_sem_confirm_positivo_sem_return_o_evento_nao_e_marcado(
+def test_sem_confirm_positivo_sem_return_o_evento_e_reagendado_e_nao_marcado(
     resultado: ResultadoPublicacao,
 ) -> None:
     falho, confirmado = _evento(1), _evento(2)
@@ -98,11 +119,12 @@ def test_sem_confirm_positivo_sem_return_o_evento_nao_e_marcado(
     resumo = asyncio.run(portas.caso().executar())
 
     assert portas.marcados == [confirmado.evento_id]
+    assert portas.reagendados == [falho.evento_id]
     assert resumo.resultados[resultado] == 1
     assert resumo.resultados[ResultadoPublicacao.CONFIRMADO] == 1
 
 
-def test_falha_na_publicacao_interrompe_o_ciclo_sem_marcar() -> None:
+def test_falha_na_publicacao_reagenda_o_evento_e_o_ciclo_continua() -> None:
     confirmado, quebrado, seguinte = _evento(1), _evento(2), _evento(3)
     portas = _Portas(
         [confirmado, quebrado, seguinte],
@@ -113,11 +135,64 @@ def test_falha_na_publicacao_interrompe_o_ciclo_sem_marcar() -> None:
         },
     )
 
+    resumo = asyncio.run(portas.caso().executar())
+
+    assert portas.marcados == [confirmado.evento_id, seguinte.evento_id]
+    assert portas.reagendados == [quebrado.evento_id]
+    assert resumo.resultados[ResultadoPublicacao.FALHA] == 1
+    assert resumo.resultados[ResultadoPublicacao.CONFIRMADO] == 2
+
+
+def test_espera_do_reagendamento_cresce_com_as_tentativas_do_evento() -> None:
+    eventos = [_evento(1, tentativas=0), _evento(2, tentativas=3), _evento(3, 50)]
+    portas = _Portas(
+        eventos, {e.evento_id: ResultadoPublicacao.DEVOLVIDO for e in eventos}
+    )
+
+    asyncio.run(portas.caso().executar())
+
+    assert [portas.esperas[e.evento_id] for e in eventos] == [
+        timedelta(seconds=1),
+        timedelta(seconds=8),
+        timedelta(minutes=1),
+    ]
+
+
+def test_falha_no_registro_propaga_e_o_evento_segue_pendente() -> None:
+    evento = _evento(1)
+
+    class _RegistroFora(_Portas):
+        async def reagendar(self, evento: EventoReservado, espera: timedelta) -> None:
+            raise ConnectionError("banco fora")
+
+    portas = _RegistroFora([evento], {evento.evento_id: ResultadoPublicacao.RECUSADO})
+
+    # Sem reagendar, o lease vence e outra reserva pega o evento (NFR-003).
     with pytest.raises(ConnectionError):
         asyncio.run(portas.caso().executar())
+    assert portas.marcados == []
 
-    # O já confirmado fica marcado; os demais seguem pendentes na outbox.
-    assert portas.marcados == [confirmado.evento_id]
+
+def test_falha_vai_a_log_com_identidade_do_evento_sem_payload(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    evento = _evento(7, tentativas=2)
+    portas = _Portas([evento], {evento.evento_id: ConnectionError("senha=x")})
+
+    with caplog.at_level(logging.WARNING, logger="relay.publicacao"):
+        asyncio.run(portas.caso().executar())
+
+    falha, reagendado = caplog.records
+    assert falha.__dict__["erro_tipo"] == "ConnectionError"
+    assert reagendado.__dict__["evento_id"] == str(evento.evento_id)
+    assert reagendado.__dict__["posicao"] == 7
+    assert reagendado.__dict__["resultado"] == "falha"
+    assert reagendado.__dict__["tentativas"] == 3
+    assert reagendado.__dict__["espera_s"] == 4.0
+    for registro in caplog.records:
+        assert "payload" not in registro.__dict__
+        assert "25.40" not in registro.getMessage()
+        assert "senha" not in str(registro.__dict__)
 
 
 def test_lote_vazio_nao_publica_nem_marca() -> None:
