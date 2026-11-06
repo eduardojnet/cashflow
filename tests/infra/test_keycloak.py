@@ -139,6 +139,27 @@ def test_token_de_cada_cliente_contem_somente_seu_escopo(
     assert carga["iss"] == EMISSOR
 
 
+def _audiencias(carga: dict[str, Any]) -> set[str]:
+    aud = carga.get("aud", [])
+    return {aud} if isinstance(aud, str) else set(aud)
+
+
+@pytest.mark.parametrize(
+    ("cliente", "audiencias"),
+    [
+        ("cliente-lancamentos", {"lancamentos-api"}),
+        ("cliente-consultas", {"consolidado-api", "lancamentos-api"}),
+    ],
+)
+def test_token_traz_a_audiencia_das_apis_dos_seus_escopos(
+    cliente: str, audiencias: set[str]
+) -> None:
+    # TD-008: a audiência acompanha o escopo; nada além das APIs autorizadas.
+    _, carga, _, _ = _partes(_token(cliente))
+
+    assert _audiencias(carga) == audiencias
+
+
 def test_cliente_de_registro_nao_obtem_escopo_de_consulta() -> None:
     status, corpo = _client_credentials(
         "cliente-lancamentos",

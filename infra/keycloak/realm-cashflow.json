@@ -18,7 +18,22 @@
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "audiencia-lancamentos-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "lancamentos-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true",
+            "lightweight.claim": "false"
+          }
+        }
+      ]
     },
     {
       "name": "lancamentos:consultar",
@@ -27,7 +42,22 @@
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "audiencia-lancamentos-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "lancamentos-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true",
+            "lightweight.claim": "false"
+          }
+        }
+      ]
     },
     {
       "name": "consolidado:consultar",
@@ -36,7 +66,22 @@
       "attributes": {
         "include.in.token.scope": "true",
         "display.on.consent.screen": "false"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "audiencia-consolidado-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "consolidado-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true",
+            "lightweight.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "defaultDefaultClientScopes": [],
