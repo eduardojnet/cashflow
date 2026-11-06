@@ -1,8 +1,9 @@
 """Rotas HTTP da API de lançamentos e mapeamento de erros (002-T5).
 
 Contrato (design 002 §4): `POST /v1/lancamentos` com `Idempotency-Key` e
-escopo `lancamentos:registrar`; `GET /health/live` e `GET /health/ready`.
-A listagem por intervalo é da 002-T7.
+escopo `lancamentos:registrar`; `GET /v1/lancamentos?data_inicio=&data_fim=
+&limite=&cursor=` com escopo `lancamentos:consultar` (002-T7; D-002,
+TD-006); `GET /health/live` e `GET /health/ready`.
 
 Erros (design 002 §4, §6):
 
@@ -10,6 +11,7 @@ Erros (design 002 §4, §6):
 |---|---|---|
 | Corpo que não é objeto JSON; `Idempotency-Key` ausente | 400 | `requisicao_invalida` |
 | Regra de domínio (tipo, valor, data, descrição); campo não previsto | 422 | `validacao` |
+| Parâmetro de listagem inválido; `data_inicio` > `data_fim` | 422 | `validacao` |
 | Token ausente ou inválido | 401 | `nao_autenticado` |
 | Token sem o escopo da rota | 403 | `sem_escopo` |
 | Chave já usada com outro conteúdo (D-006) | 409 | `conflito_idempotencia` |
@@ -49,10 +51,12 @@ from seguranca import (
 )
 
 from lancamentos.adaptadores.http.logs import correlation_id
-from lancamentos.adaptadores.seguranca import ESCOPO_REGISTRAR
+from lancamentos.adaptadores.seguranca import ESCOPO_CONSULTAR, ESCOPO_REGISTRAR
 from lancamentos.aplicacao import (
     ChaveIdempotenciaInvalida,
     ConflitoIdempotencia,
+    ConsultaInvalida,
+    ListarLancamentos,
     RegistrarLancamento,
     RegistrarLancamentoCmd,
 )
@@ -118,6 +122,7 @@ def _token_bearer(request: Request) -> str:
 
 def criar_app(
     registrar: RegistrarLancamento,
+    listar: ListarLancamentos,
     validador: ValidadorToken,
     prontidao: Prontidao,
     metricas: Metricas,
@@ -220,6 +225,20 @@ def criar_app(
             motivo=erro.motivo,
         )
 
+    # Registrado à parte: o Starlette escolhe o tratador pela classe mais
+    # específica, e a listagem não é "lançamento inválido".
+    @app.exception_handler(ConsultaInvalida)
+    async def _consulta_invalida(request: Request, erro: Exception) -> Response:
+        assert isinstance(erro, ConsultaInvalida)
+        return _erro(
+            request,
+            422,
+            "validacao",
+            "consulta inválida",
+            campo=erro.campo,
+            motivo=erro.motivo,
+        )
+
     @app.exception_handler(ConflitoIdempotencia)
     async def _conflito(request: Request, erro: Exception) -> Response:
         return _erro(request, 409, "conflito_idempotencia", str(erro))
@@ -236,6 +255,7 @@ def criar_app(
         app.add_exception_handler(tipo, _indisponivel)
 
     autenticar_registro = exigir(ESCOPO_REGISTRAR)
+    autenticar_consulta = exigir(ESCOPO_CONSULTAR)
 
     @app.post("/v1/lancamentos")
     async def registrar_lancamento(
@@ -258,6 +278,24 @@ def criar_app(
             "posicao": resposta.corpo.get("posicao"),
         }
         return JSONResponse(resposta.corpo, resposta.status_http)
+
+    @app.get("/v1/lancamentos")
+    async def listar_lancamentos(
+        request: Request,
+        _: Annotated[Principal, Depends(autenticar_consulta)],
+    ) -> Response:
+        # Parâmetros lidos à mão, e não pela validação do FastAPI, para o
+        # erro sair no mesmo formato das demais rotas.
+        parametros = request.query_params
+        pagina = await listar.executar(
+            parametros.get("data_inicio"),
+            parametros.get("data_fim"),
+            parametros.get("limite"),
+            parametros.get("cursor"),
+        )
+        request.state.resultado = "listado"
+        request.state.campos_log = {"itens": len(pagina.itens)}
+        return JSONResponse(pagina.como_dict())
 
     @app.get("/health/live")
     async def vivo() -> Response:

@@ -1,5 +1,7 @@
 """Contrato HTTP, mapeamento de erros, métricas e logs da API (002-T5).
 
+A listagem (002-T7) tem os seus em test_listagem_http.py.
+
 Sem infraestrutura: a unidade de trabalho e o validador são substituídos por
 dublês nas portas. O mesmo contrato roda contra PostgreSQL e Keycloak reais
 em tests/integracao/test_api_http_livro.py.
@@ -10,6 +12,7 @@ import json
 import logging
 import sys
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,10 +26,12 @@ from lancamentos.adaptadores.http import (
     criar_app,
     redigir_texto,
 )
-from lancamentos.adaptadores.seguranca import ESCOPO_REGISTRAR
+from lancamentos.adaptadores.seguranca import ESCOPO_CONSULTAR, ESCOPO_REGISTRAR
 from lancamentos.aplicacao import (
     STATUS_CRIADO,
     ConflitoIdempotencia,
+    ConsultaLivro,
+    ListarLancamentos,
     RegistrarLancamento,
     RegistrarLancamentoCmd,
     RespostaRegistro,
@@ -45,7 +50,9 @@ from seguranca import (
 TOKEN_REGISTRO = "eyJhbGciOiJSUzI1NiJ9.eyJzY29wZSI6InJlZ2lzdHJhciJ9.YXNzaW5hdHVyYQ"
 TOKEN_SEM_ESCOPO = "eyJhbGciOiJSUzI1NiJ9.eyJzY29wZSI6Im91dHJvIn0.YXNzaW5hdHVyYQ"
 TOKEN_JWKS_FORA = "eyJhbGciOiJSUzI1NiJ9.eyJqd2tzIjoiZm9yYSJ9.YXNzaW5hdHVyYQ"
+TOKEN_CONSULTA = "eyJhbGciOiJSUzI1NiJ9.eyJzY29wZSI6ImNvbnN1bHRhciJ9.YXNzaW5hdHVyYQ"
 CLIENTE = "cliente-lancamentos"
+CLIENTE_CONSULTAS = "cliente-consultas"
 
 # Marcadores fáceis de achar em qualquer saída de log.
 VALOR = "4321.98"
@@ -53,6 +60,8 @@ DESCRICAO = "descricao-sigilosa-xyz"
 
 
 class ValidadorFalso:
+    """Um escopo por token, como os clientes do realm (INFRA 5.4; D-002)."""
+
     def validar(self, token: str, escopo_exigido: str) -> Principal:
         if not token:
             raise TokenInvalido(MotivoFalhaJwt.AUSENTE)
@@ -60,10 +69,18 @@ class ValidadorFalso:
             raise JwksIndisponivel()
         if token == TOKEN_SEM_ESCOPO:
             raise EscopoInsuficiente()
-        if token != TOKEN_REGISTRO:
+        escopos = {TOKEN_REGISTRO: ESCOPO_REGISTRAR, TOKEN_CONSULTA: ESCOPO_CONSULTAR}
+        if token not in escopos:
             raise TokenInvalido(MotivoFalhaJwt.ASSINATURA)
-        assert escopo_exigido == ESCOPO_REGISTRAR
-        return Principal(CLIENTE, frozenset({ESCOPO_REGISTRAR}))
+        if escopos[token] != escopo_exigido:
+            raise EscopoInsuficiente()
+        cliente = CLIENTE if token == TOKEN_REGISTRO else CLIENTE_CONSULTAS
+        return Principal(cliente, frozenset({escopos[token]}))
+
+
+class ConsultaVazia:
+    async def listar(self, *_: object) -> list[Any]:
+        return []
 
 
 @dataclass
@@ -110,8 +127,9 @@ class Api:
         return [json.loads(linha) for linha in self.saida_log.getvalue().splitlines()]
 
 
-@pytest.fixture
-def api() -> Iterator[Api]:
+@contextmanager
+def montar_api(consulta: ConsultaLivro | None = None, **opcoes: int) -> Iterator[Api]:
+    """API sobre dublês; `consulta` e `opcoes` configuram a listagem."""
     unidade = UnidadeFalsa()
     metricas = Metricas()
     prontidao = {"banco": True, "jwks": True}
@@ -119,7 +137,13 @@ def api() -> Iterator[Api]:
     async def verificar() -> dict[str, bool]:
         return dict(prontidao)
 
-    app = criar_app(RegistrarLancamento(unidade), ValidadorFalso(), verificar, metricas)
+    app = criar_app(
+        RegistrarLancamento(unidade),
+        ListarLancamentos(consulta or ConsultaVazia(), **opcoes),
+        ValidadorFalso(),
+        verificar,
+        metricas,
+    )
     saida = io.StringIO()
     manipulador = logging.StreamHandler(saida)
     manipulador.setFormatter(FormatadorJson())
@@ -133,6 +157,12 @@ def api() -> Iterator[Api]:
     finally:
         raiz.removeHandler(manipulador)
         raiz.setLevel(nivel)
+
+
+@pytest.fixture
+def api() -> Iterator[Api]:
+    with montar_api() as api:
+        yield api
 
 
 def _corpo(**campos: object) -> dict[str, object]:

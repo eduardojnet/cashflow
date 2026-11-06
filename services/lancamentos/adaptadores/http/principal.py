@@ -11,7 +11,9 @@ Variáveis (ver infra/compose.yaml):
   `PG_LIVRO_BANCO`, `PG_LIVRO_USUARIO_API`;
 - `POOL_MIN`, `POOL_MAX`, `POOL_TIMEOUT_SEGUNDOS`;
 - `JWT_*`, lidas por `ConfiguracaoJwt.de_ambiente`;
-- `PRONTIDAO_TIMEOUT_SEGUNDOS`: espera máxima de cada verificação do ready.
+- `PRONTIDAO_TIMEOUT_SEGUNDOS`: espera máxima de cada verificação do ready;
+- `LISTAGEM_LIMITE_PADRAO` e `LISTAGEM_LIMITE_MAXIMO`: itens por página da
+  listagem quando `limite` é omitido e maior `limite` aceito (002-T7).
 """
 
 import asyncio
@@ -32,11 +34,17 @@ from starlette.concurrency import run_in_threadpool
 
 from lancamentos.adaptadores.http.app import COMPONENTE, Prontidao, criar_app
 from lancamentos.adaptadores.postgres import (
+    ConsultaLivroPostgres,
     FabricaConexao,
     UnidadeDeTrabalhoLivroPostgres,
 )
 from lancamentos.adaptadores.seguranca import criar_validador_lancamentos
-from lancamentos.aplicacao import RegistrarLancamento
+from lancamentos.aplicacao import (
+    LIMITE_MAXIMO,
+    LIMITE_PADRAO,
+    ListarLancamentos,
+    RegistrarLancamento,
+)
 
 Pool = AsyncConnectionPool[AsyncConnection[Any]]
 
@@ -160,6 +168,11 @@ def criar_app_do_ambiente(
     registrar = RegistrarLancamento(
         UnidadeDeTrabalhoLivroPostgres(fabrica_de_conexao(pool))
     )
+    listar = ListarLancamentos(
+        ConsultaLivroPostgres(fabrica_de_conexao(pool)),
+        limite_padrao=int(ambiente.get("LISTAGEM_LIMITE_PADRAO", str(LIMITE_PADRAO))),
+        limite_maximo=int(ambiente.get("LISTAGEM_LIMITE_MAXIMO", str(LIMITE_MAXIMO))),
+    )
     timeout = float(ambiente.get("PRONTIDAO_TIMEOUT_SEGUNDOS", "2"))
 
     @asynccontextmanager
@@ -172,6 +185,7 @@ def criar_app_do_ambiente(
 
     return criar_app(
         registrar,
+        listar,
         validador,
         prontidao_de(pool, validador, timeout),
         metricas,
