@@ -1,5 +1,10 @@
-"""Aplicação do consolidado: casos de uso e portas (004-T3 a T5)."""
+"""Aplicação do consolidado: casos de uso e portas (004-T3 a T5; 005-T2)."""
 
+from consolidado.aplicacao.barreira import (
+    BarreiraConsumidor,
+    BarreiraSolicitada,
+    ControleBarreira,
+)
 from consolidado.aplicacao.consultar_consolidado import (
     LIMITE_MAXIMO,
     LIMITE_PADRAO,
@@ -37,10 +42,13 @@ __all__ = [
     "MOTIVO_CONFLITO_LANCAMENTO",
     "MOTIVO_CONFLITO_POSICAO",
     "MOTIVO_JSON_INVALIDO",
+    "BarreiraConsumidor",
+    "BarreiraSolicitada",
     "ConsultaInvalida",
     "ConsultarInclusao",
     "ConsultarSaldo",
     "ContribuicaoExistente",
+    "ControleBarreira",
     "CursorSaldos",
     "Desfecho",
     "EstadoCheckpoint",

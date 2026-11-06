@@ -54,17 +54,16 @@ def banco() -> Iterator[Consolidado]:
 
 
 def _nova_geracao_ativa(banco: Consolidado) -> int:
-    """Geração ativa nova, com checkpoint 0; a anterior deixa de ser ativa.
+    """Geração ativa nova, com checkpoint 0; a de antes vai a `descartada`.
 
-    Segue o ciclo de vida da migração 0002 (design 005 §3): a anterior de uma
-    chamada anterior é descartada, a nova nasce `construindo` e a troca muda
-    os dois estados e o ponteiro na mesma transação.
+    Segue o ciclo de vida da migração 0002 (design 005 §3): a nova nasce
+    `construindo` e a troca muda os estados e o ponteiro na mesma transação.
+    A de antes passa por `anterior` e é descartada na mesma transação: como
+    `anterior` recebe eventos (005-T2), ficaria com as posições dos testes
+    seguintes. Os dados dela permanecem para conferência.
     """
     with psycopg.connect(banco.conninfo("consolidado_migracao")) as conexao:
         conexao.execute("SET CONSTRAINTS ex_geracao_uma_alem_da_ativa DEFERRED")
-        conexao.execute(
-            "UPDATE geracao SET estado = 'descartada' WHERE estado = 'anterior'"
-        )
         linha = conexao.execute(
             "INSERT INTO geracao (estado) VALUES ('construindo') RETURNING id"
         ).fetchone()
@@ -80,6 +79,9 @@ def _nova_geracao_ativa(banco: Consolidado) -> int:
         )
         conexao.execute(
             "INSERT INTO checkpoint (geracao_id) VALUES (%s)", (geracao_id,)
+        )
+        conexao.execute(
+            "UPDATE geracao SET estado = 'descartada' WHERE estado = 'anterior'"
         )
     return geracao_id
 
@@ -242,9 +244,7 @@ def test_duplicata_e_conflito_de_posicao_nao_movem_o_checkpoint(
     assert _checkpoint(banco, geracao) == (1, [2])
 
 
-def test_checkpoint_e_lacunas_sao_por_geracao(
-    banco: Consolidado, geracao: int
-) -> None:
+def test_checkpoint_e_lacunas_sao_por_geracao(banco: Consolidado, geracao: int) -> None:
     _projetar(banco, 1, 3)
     anterior = geracao
     nova = _nova_geracao_ativa(banco)
@@ -261,15 +261,13 @@ def test_publicar_checkpoint_le_o_estado_da_geracao_ativa(
     _projetar(banco, 1, 2, 5)
     metricas = Metricas()
 
-    async def publicar() -> EstadoCheckpoint:
-        pool: AsyncConnectionPool[psycopg.AsyncConnection[Any]] = (
-            AsyncConnectionPool(
-                banco.conninfo("consolidado_worker"),
-                min_size=1,
-                max_size=1,
-                kwargs={"autocommit": True},
-                open=False,
-            )
+    async def publicar() -> list[EstadoCheckpoint]:
+        pool: AsyncConnectionPool[psycopg.AsyncConnection[Any]] = AsyncConnectionPool(
+            banco.conninfo("consolidado_worker"),
+            min_size=1,
+            max_size=1,
+            kwargs={"autocommit": True},
+            open=False,
         )
         await pool.open(wait=True)
         try:
@@ -281,10 +279,11 @@ def test_publicar_checkpoint_le_o_estado_da_geracao_ativa(
         finally:
             await pool.close()
 
-    estado = asyncio.run(publicar())
+    estados = asyncio.run(publicar())
 
-    assert estado == EstadoCheckpoint(geracao_id=geracao, posicao_continua=2, lacunas=2)
+    assert estados == [
+        EstadoCheckpoint(geracao_id=geracao, posicao_continua=2, lacunas=2)
+    ]
     assert _medidor(metricas, "cashflow_checkpoint_posicao", geracao) == 2
     assert _medidor(metricas, "cashflow_lacunas", geracao) == 2
     assert _checkpoint(banco, geracao) == (2, [3, 4])
-

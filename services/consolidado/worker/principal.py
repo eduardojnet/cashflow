@@ -13,8 +13,18 @@ processo:
 - RabbitMQ fora: a abertura falha e é tentada de novo a cada intervalo.
 
 Com o banco pronto, a sessão roda `preparar` antes de consumir: o worker
-publica ali o checkpoint da geração ativa nas métricas (004-T4). Falha em
-`preparar` encerra a sessão como qualquer outra falha.
+publica ali o checkpoint das gerações receptoras nas métricas (004-T4).
+Falha em `preparar` encerra a sessão como qualquer outra falha.
+
+Barreira dos consumidores (005-T2; design 005 §4; TD-002): antes de consumir
+e a cada intervalo de reconexão, a sessão lê a barreira e grava
+`pausado = false` com `visto_em`. Com a barreira solicitada, vista aí ou na
+transação de uma mensagem (`BarreiraSolicitada`), a sessão termina a
+mensagem em curso, fecha o consumo e só então o laço confirma a pausa
+(`pausado = true`), repetindo a confirmação a cada intervalo até a barreira
+ser liberada; então retoma sem esperar. Falha ao confirmar não retoma o
+consumo: a confirmação é tentada de novo. A mensagem recusada pela barreira
+volta à fila e chega de novo como reentrega.
 
 Mensagem que falha sempre fica na fila, sem descarte (INFRA 4.10), e aparece
 em `cashflow_worker_reentregas_total`.
@@ -27,6 +37,9 @@ Variáveis (ver infra/compose.yaml; DQ-003):
 - `RABBITMQ_SENHA_WORKER` (obrigatória), `RABBITMQ_HOST`, `RABBITMQ_PORTA`,
   `RABBITMQ_USUARIO_WORKER`;
 - `WORKER_PREFETCH`, `WORKER_INTERVALO_RECONEXAO_SEGUNDOS`;
+- `WORKER_CONSUMIDOR_ID` (padrão `worker`): linha do worker em
+  `estado_consumidor`. Estável entre recriações do contêiner, para não
+  deixar registros órfãos; com mais de um worker, um valor por instância;
 - `HEALTH_PORTA` (padrão 8080), `METRICAS_PORTA` (padrão 9464),
   `PRONTIDAO_TIMEOUT_SEGUNDOS`.
 """
@@ -46,6 +59,7 @@ from psycopg_pool import AsyncConnectionPool, PoolTimeout
 
 from consolidado.adaptadores.postgres import FabricaConexao
 from consolidado.adaptadores.rabbitmq.consumidor import Tratar
+from consolidado.aplicacao import BarreiraSolicitada
 from consolidado.worker.metricas import COMPONENTE
 from consolidado.worker.saude import Prontidao
 
@@ -86,6 +100,7 @@ class ConfiguracaoWorker:
     health_porta: int = 8080
     metricas_porta: int = 9464
     prontidao_timeout_segundos: float = 2.0
+    consumidor_id: str = COMPONENTE
 
     @classmethod
     def de_ambiente(cls, ambiente: Mapping[str, str]) -> "ConfiguracaoWorker":
@@ -114,17 +129,19 @@ class ConfiguracaoWorker:
             prontidao_timeout_segundos=_segundos(
                 ambiente, "PRONTIDAO_TIMEOUT_SEGUNDOS", 2
             ),
+            consumidor_id=ambiente.get("WORKER_CONSUMIDOR_ID") or COMPONENTE,
         )
 
 
 def criar_pool(configuracao: ConfiguracaoWorker) -> Pool:
     # Como no relay: autocommit para `conexao.transaction()` ser a transação
     # inteira e `check` para o pool se recuperar depois de queda do banco. O
-    # processamento usa uma conexão por vez; o ready, outra.
+    # processamento usa uma conexão por vez; a vigia da sessão (banco e
+    # barreira), outra; o ready, a terceira.
     return AsyncConnectionPool(
         configuracao.conninfo,
         min_size=1,
-        max_size=2,
+        max_size=3,
         timeout=configuracao.prontidao_timeout_segundos,
         kwargs={"autocommit": True},
         check=AsyncConnectionPool.check_connection,
@@ -179,6 +196,14 @@ def prontidao_de(banco_pronto: BancoPronto, consumidor: Consumidor) -> Prontidao
     return verificar
 
 
+class Barreira(Protocol):
+    """O que o laço usa de `BarreiraConsumidor` (005-T2; design 005 §4)."""
+
+    async def sinalizar_consumo(self) -> bool: ...
+
+    async def confirmar_pausa(self) -> bool: ...
+
+
 class LacoWorker:
     def __init__(
         self,
@@ -187,34 +212,55 @@ class LacoWorker:
         tratar: Tratar,
         banco_pronto: BancoPronto,
         preparar: Preparar | None = None,
+        barreira: Barreira | None = None,
     ) -> None:
         self._configuracao = configuracao
         self._consumidor = consumidor
         self._tratar = tratar
         self._banco_pronto = banco_pronto
         self._preparar = preparar
+        self._barreira = barreira
 
     async def executar(self, parar: asyncio.Event) -> None:
         while not parar.is_set():
-            await self.sessao(parar)
+            if await self.sessao(parar):
+                await self._pausar(parar)
+                # Barreira liberada: retoma sem esperar o intervalo.
+                continue
             if not parar.is_set():
                 await _esperar(parar, self._configuracao.intervalo_reconexao_segundos)
 
-    async def sessao(self, parar: asyncio.Event) -> None:
-        """Uma sessão de consumo, do banco pronto até parar ou falhar."""
+    async def sessao(self, parar: asyncio.Event) -> bool:
+        """Uma sessão de consumo, do banco pronto até parar ou falhar.
+
+        Devolve `True` quando a sessão terminou (ou nem começou) porque a
+        barreira dos consumidores foi solicitada; o consumo já está fechado.
+        """
         if not await self._banco_pronto():
             # Sem consumidor na fila: nada é entregue enquanto o banco não
             # puder gravar (design 004 §8).
             log.warning("banco do consolidado indisponível: consumo pausado")
-            return
+            return False
+        try:
+            if await self._barreira_solicitada():
+                return True
+        except Exception as erro:  # noqa: BLE001 - o laço não para (design §8)
+            log.warning(
+                "leitura da barreira falhou: consumo não iniciado", extra=_erro(erro)
+            )
+            return False
         encerrar = asyncio.Event()
-        vigia = asyncio.create_task(self._vigiar_banco(parar, encerrar))
+        barreira = asyncio.Event()
+        vigia = asyncio.create_task(self._vigiar(parar, encerrar, barreira))
         try:
             if self._preparar is not None:
                 await self._preparar()
             await self._consumidor.abrir()
             log.info("consumo iniciado")
             await self._consumidor.consumir(self._tratar, encerrar)
+        except BarreiraSolicitada:
+            # Vista na transação de uma mensagem, que foi desfeita sem ACK.
+            barreira.set()
         except Exception as erro:  # noqa: BLE001 - o laço não para (design §8)
             log.warning(
                 "consumo interrompido: mensagens sem ACK voltam à fila",
@@ -225,22 +271,62 @@ class LacoWorker:
                 log.warning("canal do RabbitMQ fechado: consumo interrompido")
         finally:
             vigia.cancel()
+            # A vigia termina antes da confirmação da pausa: nenhum
+            # `pausado = false` dela chega depois do `pausado = true`.
+            await asyncio.gather(vigia, return_exceptions=True)
             await self._fechar()
+        return barreira.is_set() and not parar.is_set()
 
-    async def _vigiar_banco(
-        self, parar: asyncio.Event, encerrar: asyncio.Event
+    async def _barreira_solicitada(self) -> bool:
+        if self._barreira is None:
+            return False
+        return await self._barreira.sinalizar_consumo()
+
+    async def _vigiar(
+        self, parar: asyncio.Event, encerrar: asyncio.Event, barreira: asyncio.Event
     ) -> None:
-        """Encerra a sessão em `parar` ou quando o banco deixa de responder.
+        """Encerra a sessão em `parar`, sem banco ou com a barreira solicitada.
 
-        Com a fila parada, nenhuma mensagem revelaria a queda; sem a vigia, o
-        worker seguiria inscrito e receberia mensagens que não pode gravar.
+        Com a fila parada, nenhuma mensagem revelaria a queda do banco nem a
+        barreira; sem a vigia, o worker seguiria inscrito e receberia
+        mensagens que não pode gravar, e o coordenador não teria a pausa
+        confirmada. Sem conseguir ler a barreira, a sessão também termina.
         """
         while not parar.is_set():
             await _esperar(parar, self._configuracao.intervalo_reconexao_segundos)
-            if not parar.is_set() and not await self._banco_pronto():
+            if parar.is_set():
+                break
+            if not await self._banco_pronto():
                 log.warning("banco do consolidado indisponível: consumo pausado")
                 break
+            try:
+                if await self._barreira_solicitada():
+                    barreira.set()
+                    break
+            except Exception as erro:  # noqa: BLE001 - encerra a sessão
+                log.warning(
+                    "leitura da barreira falhou: consumo interrompido",
+                    extra=_erro(erro),
+                )
+                break
         encerrar.set()
+
+    async def _pausar(self, parar: asyncio.Event) -> None:
+        """Confirma a pausa a cada intervalo até a barreira ser liberada."""
+        log.info("barreira solicitada: consumo pausado")
+        intervalo = self._configuracao.intervalo_reconexao_segundos
+        if self._barreira is None:
+            # Sem registro de consumidor: só espera e volta a ler na transação.
+            await _esperar(parar, intervalo)
+            return
+        while not parar.is_set():
+            try:
+                if not await self._barreira.confirmar_pausa():
+                    log.info("barreira liberada: consumo retomado")
+                    return
+            except Exception as erro:  # noqa: BLE001 - segue pausado
+                log.warning("confirmação da pausa falhou", extra=_erro(erro))
+            await _esperar(parar, intervalo)
 
     async def _fechar(self) -> None:
         try:

@@ -3,7 +3,8 @@
 Implementa a transação de design 004 §3 com o papel consolidado_worker, que
 só insere na inbox, na contribuição, no marcador e na quarentena, só
 atualiza as colunas de valor do saldo e do checkpoint e insere e apaga
-lacunas (migração 0001).
+lacunas (migração 0001). Lê a barreira em `controle_projecao` e as gerações
+receptoras em `geracao` (005-T2; design 005 §3, §4).
 
 Deduplicação pelas chaves do banco, não por consulta prévia (TD-001): o
 INSERT com `ON CONFLICT DO NOTHING` espera a transação concorrente que
@@ -39,6 +40,18 @@ from consolidado.dominio import Contribuicao, SaldoDiario
 FabricaConexao = Callable[[], AbstractAsyncContextManager[AsyncConnection[Any]]]
 
 
+async def barreira_solicitada(conexao: AsyncConnection[Any]) -> bool:
+    """Barreira dos consumidores em `controle_projecao` (migração 0002)."""
+    cursor = await conexao.execute(
+        "SELECT barreira = 'solicitada' FROM controle_projecao WHERE id = 1"
+    )
+    linha = await cursor.fetchone()
+    if linha is None:
+        raise RuntimeError("controle_projecao sem linha (migração 0001)")
+    solicitada: bool = linha[0]
+    return solicitada
+
+
 class TransacaoProjecaoPostgres:
     def __init__(self, conexao: AsyncConnection[Any]) -> None:
         self._conexao = conexao
@@ -47,15 +60,17 @@ class TransacaoProjecaoPostgres:
     def desfazer(self) -> None:
         self.desfeita = True
 
-    async def geracao_ativa(self) -> int:
+    async def barreira_solicitada(self) -> bool:
+        return await barreira_solicitada(self._conexao)
+
+    async def geracoes_receptoras(self) -> list[int]:
+        # Estados de design 005 §3. Geração criada depois desta leitura recebe
+        # esta mensagem pelo replay, que começa depois de criá-la.
         cursor = await self._conexao.execute(
-            "SELECT geracao_ativa_id FROM controle_projecao WHERE id = 1"
+            "SELECT id FROM geracao"
+            " WHERE estado IN ('ativa', 'construindo', 'anterior') ORDER BY id"
         )
-        linha = await cursor.fetchone()
-        if linha is None:
-            raise RuntimeError("controle_projecao sem geração ativa (migração 0001)")
-        geracao_id: int = linha[0]
-        return geracao_id
+        return [linha[0] for linha in await cursor.fetchall()]
 
     async def registrar_inbox(
         self, geracao_id: int, evento_id: UUID, hash_evento: str

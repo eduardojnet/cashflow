@@ -1,9 +1,9 @@
-"""Caso de uso do worker sem infraestrutura (004-T3, T4; design 004 §3).
+"""Caso de uso do worker sem infraestrutura (004-T3, T4, 005-T2; design 004 §3).
 
 A unidade de trabalho falsa guarda o estado como o banco guardaria (inbox,
-contribuição, saldo, marcador, checkpoint, lacunas e quarentena) e só o
-publica no "commit", para os testes verem o que cada desfecho grava e o que
-desfaz.
+contribuição, saldo, marcador, checkpoint, lacunas e quarentena, por
+geração), as gerações receptoras e a barreira, e só publica o estado no
+"commit", para os testes verem o que cada desfecho grava e o que desfaz.
 """
 
 import asyncio
@@ -15,11 +15,13 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
+import pytest
 from consolidado.aplicacao import (
     MOTIVO_CONFLITO_EVENTO,
     MOTIVO_CONFLITO_LANCAMENTO,
     MOTIVO_CONFLITO_POSICAO,
     MOTIVO_JSON_INVALIDO,
+    BarreiraSolicitada,
     ContribuicaoExistente,
     Desfecho,
     EstadoCheckpoint,
@@ -27,14 +29,17 @@ from consolidado.aplicacao import (
     ProjetarLancamento,
     TransacaoProjecao,
 )
-from consolidado.dominio import Contribuicao, SaldoDiario
+from consolidado.dominio import Contribuicao, EventoLancamentoRegistrado, SaldoDiario
 
 GERACAO = 7
+CANDIDATA = 8
 DATA = date(2026, 11, 6)
 
 
 class _Estado:
     def __init__(self) -> None:
+        self.geracoes: list[int] = [GERACAO]
+        self.barreira = False
         self.inbox: dict[tuple[int, UUID], str] = {}
         self.contribuicoes: dict[tuple[int, UUID], Contribuicao] = {}
         self.saldos: dict[tuple[int, date], SaldoDiario] = {}
@@ -45,6 +50,8 @@ class _Estado:
 
     def copia(self) -> "_Estado":
         outro = _Estado()
+        outro.geracoes = list(self.geracoes)
+        outro.barreira = self.barreira
         outro.inbox = dict(self.inbox)
         outro.contribuicoes = dict(self.contribuicoes)
         outro.saldos = dict(self.saldos)
@@ -63,8 +70,11 @@ class _Transacao:
     def desfazer(self) -> None:
         self.desfeita = True
 
-    async def geracao_ativa(self) -> int:
-        return GERACAO
+    async def barreira_solicitada(self) -> bool:
+        return self.estado.barreira
+
+    async def geracoes_receptoras(self) -> list[int]:
+        return sorted(self.estado.geracoes)
 
     async def registrar_inbox(
         self, geracao_id: int, evento_id: UUID, hash_evento: str
@@ -500,8 +510,194 @@ def test_publicar_checkpoint_le_a_geracao_ativa_sem_gravar() -> None:
     commits = unidade.commits
     observador = _Observador()
 
-    estado = asyncio.run(ProjetarLancamento(unidade, observador).publicar_checkpoint())
+    estados = asyncio.run(ProjetarLancamento(unidade, observador).publicar_checkpoint())
 
-    assert estado == EstadoCheckpoint(GERACAO, 1, 1)
-    assert observador.estados == [estado]
+    assert estados == [EstadoCheckpoint(GERACAO, 1, 1)]
+    assert observador.estados == estados
     assert unidade.commits == commits
+
+
+# --- gerações receptoras (005-T2; TD-001) -------------------------------------
+
+
+def _com_candidata(unidade: _Unidade) -> None:
+    """Candidata `construindo`, recém-criada com checkpoint 0 (005-T3)."""
+    unidade.estado.geracoes.append(CANDIDATA)
+    unidade.estado.checkpoints[CANDIDATA] = 0
+
+
+def _saldos(unidade: _Unidade) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
+    return {
+        geracao: (s.total_creditos, s.total_debitos, s.saldo_dia)
+        for (geracao, data), s in unidade.estado.saldos.items()
+        if data == DATA
+    }
+
+
+def test_com_candidata_cada_lancamento_entra_nas_duas_geracoes_no_mesmo_commit() -> (
+    None
+):
+    unidade = _Unidade()
+    _com_candidata(unidade)
+    credito = _evento(posicao=1, tipo="CREDITO", valor="100.00")
+    debito = _evento(posicao=2, tipo="DEBITO", valor="30.25")
+
+    desfechos = _projetar(unidade, credito, debito)
+
+    assert desfechos == [Desfecho.APLICADO, Desfecho.APLICADO]
+    # Uma transação por mensagem, que grava as duas gerações.
+    assert unidade.commits == 2
+    esperado = (Decimal("100.00"), Decimal("30.25"), Decimal("69.75"))
+    assert _saldos(unidade) == {GERACAO: esperado, CANDIDATA: esperado}
+    for geracao in (GERACAO, CANDIDATA):
+        assert unidade.estado.checkpoints[geracao] == 2
+        assert (geracao, UUID(str(debito["lancamento_id"]))) in (
+            unidade.estado.marcadores
+        )
+
+
+def test_falha_antes_do_commit_nao_grava_em_nenhuma_geracao() -> None:
+    class _Falha(_Unidade):
+        @asynccontextmanager
+        async def _transacao(self) -> AsyncIterator[TransacaoProjecao]:
+            async with super()._transacao() as transacao:
+                yield transacao
+                raise ConnectionError("banco fora")
+
+    unidade = _Falha()
+    _com_candidata(unidade)
+
+    with pytest.raises(ConnectionError):
+        asyncio.run(ProjetarLancamento(unidade).executar(_mensagem(_evento())))
+
+    assert unidade.estado.saldos == {} and unidade.estado.inbox == {}
+    assert unidade.estado.checkpoints == {GERACAO: 0, CANDIDATA: 0}
+
+
+def test_replay_e_duplicata_na_ativa_e_aplicado_na_candidata() -> None:
+    unidade = _Unidade()
+    evento = _evento(posicao=1)
+    _projetar(unidade, evento)
+    _com_candidata(unidade)
+    observador = _Observador()
+
+    # O replay republica o mesmo evento (003 TD-004; D-002).
+    desfechos = _projetar(unidade, evento, observador=observador)
+
+    assert desfechos == [Desfecho.APLICADO]
+    esperado = (Decimal("100.00"), Decimal(0), Decimal("100.00"))
+    assert _saldos(unidade) == {GERACAO: esperado, CANDIDATA: esperado}
+    # Só a geração em que o lançamento entrou publica o checkpoint.
+    assert observador.estados == [EstadoCheckpoint(CANDIDATA, 1, 0)]
+
+
+def test_duplicata_em_todas_as_geracoes_desfaz_a_transacao() -> None:
+    unidade = _Unidade()
+    _com_candidata(unidade)
+    evento = _evento()
+
+    desfechos = _projetar(unidade, evento, evento)
+
+    assert desfechos == [Desfecho.APLICADO, Desfecho.EVENTO_DUPLICADO]
+    assert (unidade.commits, unidade.rollbacks) == (1, 1)
+
+
+def test_lancamento_ja_projetado_numa_geracao_e_novo_na_outra_e_aplicado() -> None:
+    unidade = _Unidade()
+    original = _evento(posicao=1)
+    _projetar(unidade, original)
+    _com_candidata(unidade)
+    # Replay com outro `evento_id` para o mesmo lançamento.
+    republicado = {**original, "evento_id": str(uuid.uuid4())}
+
+    desfechos = _projetar(unidade, republicado)
+
+    assert desfechos == [Desfecho.APLICADO]
+    assert set(_saldos(unidade)) == {GERACAO, CANDIDATA}
+    assert _saldos(unidade)[GERACAO][0] == Decimal("100.00")
+
+
+def test_conflito_numa_geracao_vai_uma_vez_a_quarentena_sem_desfazer_a_outra() -> None:
+    unidade = _Unidade()
+    _com_candidata(unidade)
+    # A candidata já tem outro lançamento na posição 3; a ativa, não.
+    intruso = EventoLancamentoRegistrado.de_dados(_evento(posicao=3)).contribuicao
+    unidade.estado.contribuicoes[(CANDIDATA, intruso.lancamento_id)] = intruso
+    evento = _evento(posicao=3)
+
+    desfechos = _projetar(unidade, evento)
+
+    assert desfechos == [Desfecho.QUARENTENA_CONFLITO_POSICAO]
+    assert [motivo for _, motivo, _ in unidade.estado.quarentena] == [
+        MOTIVO_CONFLITO_POSICAO
+    ]
+    assert set(_saldos(unidade)) == {GERACAO}
+    assert unidade.commits == 1
+
+
+def test_conflito_em_duas_geracoes_gera_uma_so_quarentena() -> None:
+    unidade = _Unidade()
+    _com_candidata(unidade)
+    original = _evento(posicao=1)
+    _projetar(unidade, original)
+    adulterado = {**original, "valor": "99.00"}
+
+    desfechos = _projetar(unidade, adulterado)
+
+    assert desfechos == [Desfecho.QUARENTENA_CONFLITO_EVENTO]
+    assert len(unidade.estado.quarentena) == 1
+
+
+def test_publicar_checkpoint_le_todas_as_geracoes_receptoras() -> None:
+    unidade = _Unidade()
+    _projetar(unidade, *_posicoes(1, 2))
+    _com_candidata(unidade)
+    observador = _Observador()
+
+    estados = asyncio.run(ProjetarLancamento(unidade, observador).publicar_checkpoint())
+
+    assert estados == [
+        EstadoCheckpoint(GERACAO, 2, 0),
+        EstadoCheckpoint(CANDIDATA, 0, 0),
+    ]
+    assert observador.estados == estados
+
+
+# --- barreira dos consumidores (005-T2; TD-002) -------------------------------
+
+
+@pytest.mark.parametrize(
+    "mensagem",
+    [
+        _mensagem(_evento()),
+        MensagemEvento(corpo=b"{quebrado", dados=None, identificador=None),
+    ],
+    ids=["legivel", "ilegivel"],
+)
+def test_barreira_solicitada_recusa_a_mensagem_sem_gravar(
+    mensagem: MensagemEvento,
+) -> None:
+    unidade = _Unidade()
+    _com_candidata(unidade)
+    unidade.estado.barreira = True
+    observador = _Observador()
+
+    with pytest.raises(BarreiraSolicitada):
+        asyncio.run(ProjetarLancamento(unidade, observador).executar(mensagem))
+
+    assert (unidade.commits, unidade.rollbacks) == (0, 1)
+    assert unidade.estado.saldos == {} and unidade.estado.inbox == {}
+    assert unidade.estado.quarentena == []
+    assert observador.estados == []
+
+
+def test_barreira_liberada_volta_a_projetar() -> None:
+    unidade = _Unidade()
+    unidade.estado.barreira = True
+    evento = _evento()
+    with pytest.raises(BarreiraSolicitada):
+        _projetar(unidade, evento)
+
+    unidade.estado.barreira = False
+
+    assert _projetar(unidade, evento) == [Desfecho.APLICADO]

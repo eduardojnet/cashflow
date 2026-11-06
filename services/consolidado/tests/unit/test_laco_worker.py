@@ -2,7 +2,9 @@
 
 O laço não para por falha de banco ou de broker (design 004 §8): com o banco
 fora, o consumo nem começa; falha na sessão fecha o consumidor, para o broker
-devolver o que não foi confirmado, e a sessão seguinte recomeça.
+devolver o que não foi confirmado, e a sessão seguinte recomeça. Com a
+barreira dos consumidores solicitada (005-T2; TD-002), o consumo fecha antes
+de a pausa ser confirmada e só reabre depois da liberação.
 """
 
 import asyncio
@@ -13,6 +15,7 @@ from collections.abc import Awaitable, Callable
 import pytest
 from consolidado.adaptadores.logs import REDIGIDO, FormatadorJson
 from consolidado.adaptadores.rabbitmq.consumidor import Tratar
+from consolidado.aplicacao import BarreiraSolicitada
 from consolidado.worker.principal import (
     BancoPronto,
     ConfiguracaoWorker,
@@ -37,11 +40,16 @@ class _Consumidor:
       sessão ser encerrada;
     - "aguardar": consome até a sessão ser encerrada pelo laço;
     - "falha_ao_consumir" e "canal_fechado": a sessão termina sozinha;
+    - "barreira": a transação de uma mensagem viu a barreira solicitada;
     - "falha_ao_abrir": a abertura falha antes de consumir.
+
+    `eventos` registra abertura e fechamento, na ordem, junto com os da
+    barreira falsa.
     """
 
-    def __init__(self, roteiro: list[str]) -> None:
+    def __init__(self, roteiro: list[str], eventos: list[str] | None = None) -> None:
         self._roteiro = roteiro
+        self.eventos = eventos if eventos is not None else []
         self.aberturas = 0
         self.fechamentos = 0
         self.sessoes = 0
@@ -51,12 +59,14 @@ class _Consumidor:
 
     async def abrir(self) -> None:
         self.aberturas += 1
+        self.eventos.append("abrir")
         if self._passo() == "falha_ao_abrir":
             raise ConnectionError("broker fora")
         self._conectado = True
 
     async def fechar(self) -> None:
         self.fechamentos += 1
+        self.eventos.append("fechar")
         self._conectado = False
 
     def conectado(self) -> bool:
@@ -67,6 +77,8 @@ class _Consumidor:
         passo = self._roteiro.pop(0)
         if passo == "falha_ao_consumir":
             raise RuntimeError("falha simulada")
+        if passo == "barreira":
+            raise BarreiraSolicitada()
         if passo == "parar":
             self.parar_processo.set()
         if passo in ("parar", "aguardar"):
@@ -94,13 +106,42 @@ def _banco(respostas: list[bool]) -> tuple[list[int], BancoPronto]:
     return chamadas, pronto
 
 
+class _Barreira:
+    """Barreira falsa: respostas em ordem; depois delas, barreira liberada."""
+
+    def __init__(
+        self,
+        eventos: list[str],
+        sinais: list[bool | Exception] | None = None,
+        pausas: list[bool | Exception] | None = None,
+    ) -> None:
+        self.eventos = eventos
+        self._sinais = sinais or []
+        self._pausas = pausas or []
+
+    async def sinalizar_consumo(self) -> bool:
+        return self._responder("sinalizar", self._sinais)
+
+    async def confirmar_pausa(self) -> bool:
+        return self._responder("pausa", self._pausas)
+
+    def _responder(self, nome: str, respostas: list[bool | Exception]) -> bool:
+        resposta = respostas.pop(0) if respostas else False
+        if isinstance(resposta, Exception):
+            self.eventos.append(f"{nome}:falha")
+            raise resposta
+        self.eventos.append(f"{nome}:{'solicitada' if resposta else 'liberada'}")
+        return resposta
+
+
 def _executar(
     consumidor: _Consumidor,
     banco_respostas: list[bool],
     preparar: Callable[[], Awaitable[object]] | None = None,
+    barreira: _Barreira | None = None,
 ) -> list[int]:
     chamadas, pronto = _banco(banco_respostas)
-    laco = LacoWorker(CONFIGURACAO, consumidor, _nada, pronto, preparar)
+    laco = LacoWorker(CONFIGURACAO, consumidor, _nada, pronto, preparar, barreira)
 
     async def cenario() -> None:
         await asyncio.wait_for(laco.executar(consumidor.parar_processo), 5)
@@ -265,3 +306,125 @@ def test_falha_em_preparar_encerra_a_sessao_sem_consumir_e_recomeca() -> None:
 
     assert (consumidor.aberturas, consumidor.sessoes) == (1, 1)
     assert consumidor.fechamentos == 2
+
+
+# --- barreira dos consumidores (005-T2; design 005 §4) ------------------------
+
+
+def test_barreira_vista_pela_vigia_fecha_o_consumo_antes_de_confirmar_a_pausa() -> None:
+    eventos: list[str] = []
+    consumidor = _Consumidor(["aguardar", "parar"], eventos)
+    # Início da 1ª sessão liberado; a vigia vê a barreira; a pausa é
+    # confirmada duas vezes antes da liberação.
+    barreira = _Barreira(eventos, sinais=[False, True], pausas=[True, True, False])
+
+    _executar(consumidor, [], barreira=barreira)
+
+    assert eventos[:9] == [
+        "sinalizar:liberada",
+        "abrir",
+        "sinalizar:solicitada",
+        "fechar",
+        "pausa:solicitada",
+        "pausa:solicitada",
+        "pausa:liberada",
+        # Retoma sem esperar o intervalo: nova sessão.
+        "sinalizar:liberada",
+        "abrir",
+    ]
+    assert (consumidor.sessoes, consumidor.encerradas) == (2, 2)
+
+
+def test_barreira_vista_na_transacao_da_mensagem_encerra_a_sessao_e_pausa() -> None:
+    eventos: list[str] = []
+    consumidor = _Consumidor(["barreira", "parar"], eventos)
+    barreira = _Barreira(eventos, sinais=[False], pausas=[True, False])
+
+    _executar(consumidor, [], barreira=barreira)
+
+    # A mensagem recusa sem esperar a vigia; a 2ª sessão termina com
+    # "parar" antes do primeiro intervalo dela.
+    assert eventos[:7] == [
+        "sinalizar:liberada",
+        "abrir",
+        "fechar",
+        "pausa:solicitada",
+        "pausa:liberada",
+        "sinalizar:liberada",
+        "abrir",
+    ]
+    assert consumidor.sessoes == 2
+
+
+def test_barreira_ja_solicitada_nao_abre_o_consumo() -> None:
+    eventos: list[str] = []
+    consumidor = _Consumidor(["parar"], eventos)
+    barreira = _Barreira(eventos, sinais=[True], pausas=[False])
+
+    _executar(consumidor, [], barreira=barreira)
+
+    assert eventos[:4] == [
+        "sinalizar:solicitada",
+        "pausa:liberada",
+        "sinalizar:liberada",
+        "abrir",
+    ]
+    assert (consumidor.aberturas, consumidor.sessoes) == (1, 1)
+
+
+def test_falha_ao_confirmar_a_pausa_nao_retoma_o_consumo() -> None:
+    eventos: list[str] = []
+    consumidor = _Consumidor(["parar"], eventos)
+    barreira = _Barreira(
+        eventos,
+        sinais=[True],
+        pausas=[ConnectionError("banco fora"), True, False],
+    )
+
+    _executar(consumidor, [], barreira=barreira)
+
+    assert eventos[:6] == [
+        "sinalizar:solicitada",
+        "pausa:falha",
+        "pausa:solicitada",
+        "pausa:liberada",
+        "sinalizar:liberada",
+        "abrir",
+    ]
+
+
+def test_falha_ao_ler_a_barreira_nao_inicia_o_consumo() -> None:
+    eventos: list[str] = []
+    consumidor = _Consumidor(["parar"], eventos)
+    barreira = _Barreira(eventos, sinais=[ConnectionError("banco fora")])
+
+    _executar(consumidor, [], barreira=barreira)
+
+    assert eventos[:3] == ["sinalizar:falha", "sinalizar:liberada", "abrir"]
+    assert consumidor.aberturas == 1
+
+
+def test_falha_da_vigia_ao_ler_a_barreira_encerra_a_sessao() -> None:
+    eventos: list[str] = []
+    consumidor = _Consumidor(["aguardar", "parar"], eventos)
+    barreira = _Barreira(eventos, sinais=[False, RuntimeError("sem privilégio")])
+
+    _executar(consumidor, [], barreira=barreira)
+
+    assert eventos[:6] == [
+        "sinalizar:liberada",
+        "abrir",
+        "sinalizar:falha",
+        "fechar",
+        "sinalizar:liberada",
+        "abrir",
+    ]
+    assert not any(evento.startswith("pausa") for evento in eventos)
+
+
+def test_configuracao_le_o_identificador_do_consumidor() -> None:
+    assert ConfiguracaoWorker.de_ambiente(AMBIENTE).consumidor_id == "worker"
+    configuracao = ConfiguracaoWorker.de_ambiente(
+        {**AMBIENTE, "WORKER_CONSUMIDOR_ID": "worker-2"}
+    )
+    assert configuracao.consumidor_id == "worker-2"

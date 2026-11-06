@@ -1,4 +1,4 @@
-"""Processo do worker do consolidado (004-T3, T4; design 004 §3, §12).
+"""Processo do worker do consolidado (004-T3, T4, 005-T2; design 004 §3, §12).
 
     python -m consolidado.worker
 
@@ -16,9 +16,12 @@ import signal
 from observabilidade import Metricas
 
 from consolidado.adaptadores.logs import configurar_logging
-from consolidado.adaptadores.postgres import UnidadeDeTrabalhoProjecaoPostgres
+from consolidado.adaptadores.postgres import (
+    ControleBarreiraPostgres,
+    UnidadeDeTrabalhoProjecaoPostgres,
+)
 from consolidado.adaptadores.rabbitmq import ConsumidorRabbitMQ, ProcessadorMensagens
-from consolidado.aplicacao import ProjetarLancamento
+from consolidado.aplicacao import BarreiraConsumidor, ProjetarLancamento
 from consolidado.worker.metricas import MetricasWorker, medir_pool
 from consolidado.worker.principal import (
     ConfiguracaoWorker,
@@ -38,8 +41,12 @@ async def executar(configuracao: ConfiguracaoWorker) -> None:
 
     pool = criar_pool(configuracao)
     medir_pool(pool, metricas)
+    conexao = fabrica_de_conexao(pool)
     projetar = ProjetarLancamento(
-        UnidadeDeTrabalhoProjecaoPostgres(fabrica_de_conexao(pool)), metricas_worker
+        UnidadeDeTrabalhoProjecaoPostgres(conexao), metricas_worker
+    )
+    barreira = BarreiraConsumidor(
+        ControleBarreiraPostgres(conexao), configuracao.consumidor_id
     )
     processador = ProcessadorMensagens(projetar, metricas_worker)
     consumidor = ConsumidorRabbitMQ(configuracao.url_rabbitmq, configuracao.prefetch)
@@ -50,6 +57,7 @@ async def executar(configuracao: ConfiguracaoWorker) -> None:
         processador.processar,
         banco_pronto,
         projetar.publicar_checkpoint,
+        barreira,
     )
     saude = ServidorSaude(prontidao_de(banco_pronto, consumidor))
 
