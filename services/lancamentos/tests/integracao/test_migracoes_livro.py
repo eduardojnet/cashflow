@@ -162,7 +162,7 @@ def test_migracao_fica_em_head_aplicada_por_livro_migracao() -> None:
     )
 
     assert resultado.returncode == 0, resultado.stderr
-    assert resultado.stdout.strip() == "0001"
+    assert resultado.stdout.strip() == "0002"
 
 
 def test_tabelas_do_livro_pertencem_a_livro_migracao() -> None:
@@ -272,10 +272,16 @@ def test_livro_api_nao_tem_privilegio_alem_do_registro(
     assert f"permission denied for table {tabela}" in resultado.stderr
 
 
-@pytest.mark.parametrize("papel", ["livro_relay", "livro_replay"])
-@pytest.mark.parametrize("tabela", TABELAS)
+@pytest.mark.parametrize(
+    ("papel", "tabela"),
+    [
+        *(("livro_relay", tabela) for tabela in TABELAS if tabela != "outbox"),
+        *(("livro_replay", tabela) for tabela in TABELAS),
+    ],
+)
 def test_outros_papeis_ainda_nao_acessam_as_tabelas(papel: str, tabela: str) -> None:
-    # Privilégios concedidos pelas migrações das specs 003 e 005.
+    # Privilégios concedidos pelas migrações das specs 003 e 005; livro_relay
+    # lê a outbox desde a 0002 (003-T1).
     resultado = _psql(papel, f"SELECT 1 FROM {tabela} LIMIT 1")
 
     assert resultado.returncode != 0
