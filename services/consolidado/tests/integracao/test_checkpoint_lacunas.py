@@ -54,14 +54,26 @@ def banco() -> Iterator[Consolidado]:
 
 
 def _nova_geracao_ativa(banco: Consolidado) -> int:
-    """Geração ativa nova, com checkpoint 0; a anterior deixa de ser ativa."""
+    """Geração ativa nova, com checkpoint 0; a anterior deixa de ser ativa.
+
+    Segue o ciclo de vida da migração 0002 (design 005 §3): a anterior de uma
+    chamada anterior é descartada, a nova nasce `construindo` e a troca muda
+    os dois estados e o ponteiro na mesma transação.
+    """
     with psycopg.connect(banco.conninfo("consolidado_migracao")) as conexao:
-        conexao.execute("UPDATE geracao SET estado = 'anterior' WHERE estado = 'ativa'")
+        conexao.execute("SET CONSTRAINTS ex_geracao_uma_alem_da_ativa DEFERRED")
+        conexao.execute(
+            "UPDATE geracao SET estado = 'descartada' WHERE estado = 'anterior'"
+        )
         linha = conexao.execute(
-            "INSERT INTO geracao (estado) VALUES ('ativa') RETURNING id"
+            "INSERT INTO geracao (estado) VALUES ('construindo') RETURNING id"
         ).fetchone()
         assert linha is not None
         geracao_id: int = linha[0]
+        conexao.execute("UPDATE geracao SET estado = 'anterior' WHERE estado = 'ativa'")
+        conexao.execute(
+            "UPDATE geracao SET estado = 'ativa' WHERE id = %s", (geracao_id,)
+        )
         conexao.execute(
             "UPDATE controle_projecao SET geracao_ativa_id = %s WHERE id = 1",
             (geracao_id,),

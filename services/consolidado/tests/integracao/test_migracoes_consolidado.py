@@ -1,4 +1,4 @@
-"""Migrações do consolidado e privilégios contra o PostgreSQL real (004-T1).
+"""Migrações do consolidado e privilégios contra o PostgreSQL real (004-T1, 005-T1).
 
 O módulo aplica as migrações pelo serviço `consolidado-migracao` do compose,
 com o papel consolidado_migracao, e confere esquema, geração inicial e
@@ -45,6 +45,9 @@ TABELAS = [
     "checkpoint",
     "lacuna",
     "quarentena",
+    # Controle da reconstrução (migração 0002, 005-T1).
+    "estado_consumidor",
+    "fase_reconstrucao",
 ]
 # O que a consulta usa (design 004 §4, API); o resto é invisível à API.
 LIDAS_PELA_API = [
@@ -200,7 +203,7 @@ def test_migracao_fica_em_head_aplicada_por_consolidado_migracao() -> None:
     )
 
     assert resultado.returncode == 0, resultado.stderr
-    assert resultado.stdout.strip() == "0001"
+    assert resultado.stdout.strip() == "0002"
 
 
 def test_tabelas_do_consolidado_pertencem_a_consolidado_migracao() -> None:
@@ -376,9 +379,31 @@ def test_consolidado_worker_nao_tem_privilegio_alem_da_projecao(
     assert f"permission denied for table {tabela}" in resultado.stderr
 
 
-@pytest.mark.parametrize("tabela", TABELAS)
-def test_consolidado_operacao_ainda_nao_acessa_as_tabelas(tabela: str) -> None:
-    # Privilégios concedidos pela migração da spec 005.
+# O que o coordenador usa (migração 0002); o detalhe dos privilégios da
+# operação está em services/coordenador/tests/integracao.
+LIDAS_PELA_OPERACAO = [
+    "geracao",
+    "controle_projecao",
+    "checkpoint",
+    "lacuna",
+    "contribuicao",
+    "saldo_diario",
+    "estado_consumidor",
+    "fase_reconstrucao",
+]
+
+
+@pytest.mark.parametrize("tabela", LIDAS_PELA_OPERACAO)
+def test_consolidado_operacao_le_o_controle_das_geracoes(tabela: str) -> None:
+    resultado = _psql("consolidado_operacao", f"SELECT count(*) FROM {tabela}")
+
+    assert resultado.returncode == 0, resultado.stderr
+
+
+@pytest.mark.parametrize(
+    "tabela", [t for t in TABELAS if t not in LIDAS_PELA_OPERACAO]
+)
+def test_consolidado_operacao_nao_le_dados_internos_da_projecao(tabela: str) -> None:
     resultado = _psql("consolidado_operacao", f"SELECT 1 FROM {tabela} LIMIT 1")
 
     assert resultado.returncode != 0
@@ -389,7 +414,10 @@ def test_consolidado_operacao_ainda_nao_acessa_as_tabelas(tabela: str) -> None:
     ("comando", "restricao"),
     [
         (
-            "INSERT INTO geracao (estado) VALUES ('ativa')",
+            (
+                "INSERT INTO geracao (estado) VALUES ('construindo');"
+                " UPDATE geracao SET estado = 'ativa' WHERE estado = 'construindo'"
+            ),
             "ux_geracao_uma_ativa",
         ),
         (
@@ -416,6 +444,26 @@ def test_consolidado_operacao_ainda_nao_acessa_as_tabelas(tabela: str) -> None:
             INBOX.replace(ATIVA, "999999"),
             "inbox_geracao_id_fkey",
         ),
+        # Migração 0002 (005-T1): ciclo de vida das gerações e barreira.
+        (
+            "INSERT INTO geracao (estado) VALUES ('ativa')",
+            "nova nasce construindo",
+        ),
+        (
+            "UPDATE geracao SET estado = 'construindo' WHERE estado = 'ativa'",
+            "ativa para construindo",
+        ),
+        (
+            (
+                "INSERT INTO geracao (estado) VALUES ('construindo');"
+                " INSERT INTO geracao (estado) VALUES ('construindo')"
+            ),
+            "ex_geracao_uma_alem_da_ativa",
+        ),
+        (
+            "UPDATE controle_projecao SET barreira = 'parcial'",
+            "controle_projecao_barreira_check",
+        ),
     ],
     ids=[
         "uma-ativa",
@@ -425,6 +473,10 @@ def test_consolidado_operacao_ainda_nao_acessa_as_tabelas(tabela: str) -> None:
         "tipo-invalido",
         "valor-zero",
         "geracao-inexistente",
+        "nasce-construindo",
+        "transicao-invalida",
+        "uma-alem-da-ativa",
+        "barreira-invalida",
     ],
 )
 def test_restricoes_recusam_linha_invalida(comando: str, restricao: str) -> None:

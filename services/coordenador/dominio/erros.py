@@ -1,0 +1,30 @@
+"""Erros de domínio do coordenador (005 FR-002, FR-006; INFRA 7.5).
+
+A operação recusada não muda nenhuma geração; a mensagem cita só estados,
+nunca dados da projeção.
+"""
+
+
+class ErroDominio(Exception):
+    """Operação recusada por regra do ciclo de vida das gerações."""
+
+
+class TransicaoInvalida(ErroDominio):
+    """Transição fora do diagrama de estados de design 005 §3."""
+
+    def __init__(self, origem: str, destino: str) -> None:
+        super().__init__(f"transição de geração inválida: {origem} para {destino}")
+        self.origem = origem
+        self.destino = destino
+
+
+class ReconstrucaoRecusada(ErroDominio):
+    """Já existe geração `construindo` ou `anterior` (INFRA 7.5; D-005)."""
+
+    def __init__(self, impedimentos: list[str]) -> None:
+        super().__init__(
+            "reconstrução recusada: já existe geração "
+            + " e ".join(impedimentos)
+            + "; cancelar ou descartar antes"
+        )
+        self.impedimentos = impedimentos
