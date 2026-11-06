@@ -36,6 +36,27 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  livro-migracao:
+    # Migrações Alembic do livro com o papel livro_migracao, separadas da API
+    # (002-T2; design 002 §13; INFRA 3.3). Execução única, sob demanda:
+    #
+    #   docker compose -f infra/compose.yaml run --rm --build livro-migracao
+    #
+    # O perfil mantém o serviço fora do `up`, que aguarda contêineres de longa
+    # duração. Versões das imagens base: services/lancamentos/migracoes/Dockerfile.
+    profiles: ["migracao"]
+    build:
+      context: ..
+      dockerfile: services/lancamentos/migracoes/Dockerfile
+    environment:
+      PG_LIVRO_SENHA_MIGRACAO: ${PG_LIVRO_SENHA_MIGRACAO:?defina PG_LIVRO_SENHA_MIGRACAO em infra/.env}
+    networks:
+      - rede-livro
+    depends_on:
+      pg-livro:
+        condition: service_healthy
+    restart: "no"
+
   pg-consolidado:
     # Mesma versão e fonte de pg-livro (TD-007, 2026-11-06).
     image: postgres:18.6-alpine3.24

@@ -28,4 +28,12 @@ dev = [
     # Membro do workspace instalado no ambiente da raiz para que
     # `uv run pytest packages/observabilidade` rode a partir da raiz.
     "observabilidade",
+    {include-group = "migracoes"},
+]
+# Migrações Alembic dos bancos (ST-Q-005). Grupo próprio para que a imagem de
+# migração instale só isto (`uv sync --only-group migracoes`); o grupo dev o
+# inclui para `uv run alembic` no host.
+migracoes = [
+    "alembic>=1.20.1",
+    "psycopg[binary]>=3.3.8",
 ]
