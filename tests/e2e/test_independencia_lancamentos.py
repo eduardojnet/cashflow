@@ -53,8 +53,8 @@ SEGREDO = "KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS"
 # Caminho do registro (design 002 §5): o que a API usa e fica no ar.
 CAMINHO_DO_REGISTRO = {"pg-livro", "keycloak", "lancamentos-api"}
 # Precisam estar entre os parados; a API do consolidado (004-T5) entra pelo
-# complemento de CAMINHO_DO_REGISTRO quando for acrescentada ao compose.
-OBRIGATORIOS_PARADOS = {"rabbitmq", "pg-consolidado", "worker"}
+# complemento de CAMINHO_DO_REGISTRO.
+OBRIGATORIOS_PARADOS = {"rabbitmq", "pg-consolidado", "worker", "consolidado-api"}
 
 REQUISICOES = 60
 PARALELISMO = 6
@@ -79,6 +79,9 @@ def _porta_livre() -> int:
 class Ambiente:
     porta_keycloak: int
     porta_api: int
+    # Publicada pela consolidado-api (004-T5); só precisa não colidir com o
+    # ambiente principal, que pode estar no ar.
+    porta_consolidado: int
 
     def compose(
         self, *args: str, timeout: int = 120
@@ -87,6 +90,7 @@ class Ambiente:
             **os.environ,
             "KEYCLOAK_PORTA_HOST": str(self.porta_keycloak),
             "LANCAMENTOS_API_PORTA_HOST": str(self.porta_api),
+            "CONSOLIDADO_API_PORTA_HOST": str(self.porta_consolidado),
         }
         return subprocess.run(
             ["docker", "compose", "-p", PROJETO, "-f", str(COMPOSE), *args],
@@ -175,14 +179,16 @@ class Ambiente:
 
 @pytest.fixture(scope="module")
 def ambiente() -> Iterator[Ambiente]:
-    ambiente = Ambiente(porta_keycloak=_porta_livre(), porta_api=_porta_livre())
+    ambiente = Ambiente(
+        porta_keycloak=_porta_livre(),
+        porta_api=_porta_livre(),
+        porta_consolidado=_porta_livre(),
+    )
     try:
         # Bancos primeiro, migrações do livro (002-T2) e do consolidado
         # (004-T1), e só então o restante, aguardando todos os health checks,
         # inclusive o do worker (004-T3), que exige o esquema do consolidado.
-        ambiente.exigir(
-            "up", "-d", "--wait", "pg-livro", "pg-consolidado", timeout=300
-        )
+        ambiente.exigir("up", "-d", "--wait", "pg-livro", "pg-consolidado", timeout=300)
         ambiente.exigir("run", "--rm", "--build", "livro-migracao", timeout=600)
         ambiente.exigir("run", "--rm", "--build", "consolidado-migracao", timeout=600)
         ambiente.exigir("up", "-d", "--build", "--wait", timeout=900)

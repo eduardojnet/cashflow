@@ -277,6 +277,70 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  consolidado-api:
+    # API do consolidado (spec 004; 004-T5): saldo por data e por intervalo e
+    # sinal de inclusão, só da geração ativa (design 004 §4; INFRA 2.3).
+    # HTTPS com o certificado da AC local (INFRA 5.7, 5.8); JWT com
+    # `consolidado:consultar` validado na própria API com cache de JWKS
+    # (INFRA 5.4 a 5.6). Papel consolidado_api, somente leitura (INFRA
+    # 5.11). Só nas redes do consolidado e da identidade: não alcança
+    # pg-livro nem o RabbitMQ (INFRA 6.7). Mesma imagem do worker, com outro
+    # comando; versões das imagens base: services/consolidado/Dockerfile.
+    #
+    # Pressupõe o esquema aplicado pelo serviço consolidado-migracao; sem
+    # ele, o ready fica falso.
+    build:
+      context: ..
+      dockerfile: services/consolidado/Dockerfile
+    command: ["python", "-m", "consolidado.adaptadores.http"]
+    # UID e GID 1000: a chave TLS montada do host tem modo 0640 e pertence a
+    # quem a gerou (infra/tls/gerar-certificados.sh), como em lancamentos-api.
+    user: "1000:1000"
+    environment:
+      PG_CONSOLIDADO_HOST: pg-consolidado
+      PG_CONSOLIDADO_SENHA_API: ${PG_CONSOLIDADO_SENHA_API:?defina PG_CONSOLIDADO_SENHA_API em infra/.env}
+      # Emissor (`iss`) igual a KC_HOSTNAME do Keycloak; o JWKS é lido pelo
+      # nome interno, que consta do certificado do Keycloak (001-T3).
+      JWT_EMISSOR: https://localhost:${KEYCLOAK_PORTA_HOST:-8443}/realms/cashflow
+      JWT_JWKS_URL: https://keycloak:8443/realms/cashflow/protocol/openid-connect/certs
+      JWT_AC_ARQUIVO: /etc/cashflow/tls/ac-cashflow.crt
+      JWT_JWKS_TTL_SEGUNDOS: "300"
+      TLS_CERTIFICADO: /etc/cashflow/tls/consolidado-api.crt
+      TLS_CHAVE: /etc/cashflow/tls/consolidado-api.key
+      API_PORTA: "8443"
+      # Dias por página do intervalo: padrão e máximo (TD-008).
+      SALDOS_LIMITE_PADRAO: ${SALDOS_LIMITE_PADRAO:-50}
+      SALDOS_LIMITE_MAXIMO: ${SALDOS_LIMITE_MAXIMO:-500}
+      # /metrics em porta interna, sem publicação no host (007 design §4).
+      METRICAS_PORTA: "9464"
+    # Só a porta TLS, só em loopback (INFRA 6.5, 6.6).
+    # CONSOLIDADO_API_PORTA_HOST troca a porta do host se 8445 estiver ocupada.
+    ports:
+      - "127.0.0.1:${CONSOLIDADO_API_PORTA_HOST:-8445}:8443"
+    # Banco do consolidado e JWKS do Keycloak (design 001 §3).
+    networks:
+      - rede-consolidado
+      - rede-identidade
+    volumes:
+      # Gerados por infra/tls/gerar-certificados.sh (001-T3).
+      - ./tls/gerados/ac/ac-cashflow.crt:/etc/cashflow/tls/ac-cashflow.crt:ro
+      - ./tls/gerados/consolidado-api.crt:/etc/cashflow/tls/consolidado-api.crt:ro
+      - ./tls/gerados/consolidado-api.key:/etc/cashflow/tls/consolidado-api.key:ro
+    depends_on:
+      pg-consolidado:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      # Pronto = /health/ready com 200 por TLS: geração ativa legível como
+      # consolidado_api e JWKS (INFRA 8.5).
+      test: ["CMD", "python", "-m", "consolidado.adaptadores.http.sonda"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
   rabbitmq:
     # Versão: RabbitMQ 4.4.0, última GA em
     # https://www.rabbitmq.com/release-information (lançada em 2026-10-20);

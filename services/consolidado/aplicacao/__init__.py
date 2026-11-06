@@ -1,5 +1,20 @@
-"""Aplicação do consolidado: casos de uso e portas (004-T3, T4)."""
+"""Aplicação do consolidado: casos de uso e portas (004-T3 a T5)."""
 
+from consolidado.aplicacao.consultar_consolidado import (
+    LIMITE_MAXIMO,
+    LIMITE_PADRAO,
+    ConsultaInvalida,
+    ConsultarInclusao,
+    ConsultarSaldo,
+    CursorSaldos,
+    Inclusao,
+    LeituraConsolidado,
+    ListarSaldos,
+    PaginaSaldos,
+    SaldoConsultado,
+    SaldoDaData,
+    SaldosLidos,
+)
 from consolidado.aplicacao.projetar_lancamento import (
     MOTIVO_CONFLITO_EVENTO,
     MOTIVO_CONFLITO_LANCAMENTO,
@@ -16,16 +31,29 @@ from consolidado.aplicacao.projetar_lancamento import (
 )
 
 __all__ = [
+    "LIMITE_MAXIMO",
+    "LIMITE_PADRAO",
     "MOTIVO_CONFLITO_EVENTO",
     "MOTIVO_CONFLITO_LANCAMENTO",
     "MOTIVO_CONFLITO_POSICAO",
     "MOTIVO_JSON_INVALIDO",
+    "ConsultaInvalida",
+    "ConsultarInclusao",
+    "ConsultarSaldo",
     "ContribuicaoExistente",
+    "CursorSaldos",
     "Desfecho",
     "EstadoCheckpoint",
+    "Inclusao",
+    "LeituraConsolidado",
+    "ListarSaldos",
     "MensagemEvento",
     "ObservadorCheckpoint",
+    "PaginaSaldos",
     "ProjetarLancamento",
+    "SaldoConsultado",
+    "SaldoDaData",
+    "SaldosLidos",
     "TransacaoProjecao",
     "UnidadeDeTrabalhoProjecao",
 ]

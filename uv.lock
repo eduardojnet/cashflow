@@ -88,9 +88,12 @@ source = { virtual = "." }
 [package.dev-dependencies]
 consolidado = [
     { name = "aio-pika" },
+    { name = "fastapi" },
     { name = "observabilidade" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
+    { name = "seguranca" },
+    { name = "uvicorn" },
 ]
 dev = [
     { name = "aio-pika" },
@@ -128,9 +131,12 @@ relay = [
 [package.metadata.requires-dev]
 consolidado = [
     { name = "aio-pika", specifier = ">=10.2.2" },
+    { name = "fastapi", specifier = ">=0.162.0" },
     { name = "observabilidade", editable = "packages/observabilidade" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" },
     { name = "psycopg-pool", specifier = ">=3.3.3" },
+    { name = "seguranca", editable = "packages/seguranca" },
+    { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 dev = [
     { name = "aio-pika", specifier = ">=10.2.2" },

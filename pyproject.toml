@@ -37,14 +37,18 @@ dev = [
     {include-group = "consolidado"},
 ]
 # Serviço do consolidado (004-T3): worker com aio-pika (ST-Q-004), psycopg 3
-# com pool assíncrono (ST-Q-003) e o pacote interno de métricas. Grupo
-# próprio para que a imagem do consolidado instale só isto
-# (`uv sync --only-group consolidado`); a API da 004-T5 acrescenta o seu.
+# com pool assíncrono (ST-Q-003) e o pacote interno de métricas; a API de
+# consulta (004-T5) acrescenta FastAPI e uvicorn (ST-Q-002) e o pacote
+# interno de JWT. Grupo próprio para que a imagem do consolidado, comum ao
+# worker e à API, instale só isto (`uv sync --only-group consolidado`).
 consolidado = [
     "aio-pika>=10.2.2",
+    "fastapi>=0.162.0",
     "observabilidade",
     "psycopg-pool>=3.3.3",
     "psycopg[binary]>=3.3.8",
+    "seguranca",
+    "uvicorn>=0.54.0",
 ]
 # API de lançamentos (002-T5): FastAPI e uvicorn (ST-Q-002), psycopg 3 com
 # pool assíncrono (ST-Q-003) e os pacotes internos de JWT e métricas. Grupo

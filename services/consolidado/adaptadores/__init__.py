@@ -1,1 +1,2 @@
-"""Adaptadores do consolidado: PostgreSQL, RabbitMQ e logs (design 004 §4)."""
+"""Adaptadores do consolidado: PostgreSQL, RabbitMQ, HTTP, JWT e logs (design
+004 §4)."""

@@ -1,7 +1,8 @@
-# Imagem do consolidado (004-T3; design 004 §4). A mesma imagem serve o
-# worker (`python -m consolidado.worker`) e, a partir da 004-T5, a API de
-# consulta, que a reaproveita com outro comando. As migrações têm imagem
-# própria (services/consolidado/migracoes/Dockerfile).
+# Imagem do consolidado (004-T3, T5; design 004 §4). A mesma imagem serve o
+# worker (`python -m consolidado.worker`, comando padrão) e a API de consulta
+# (`python -m consolidado.adaptadores.http`, comando do serviço
+# consolidado-api no compose). As migrações têm imagem própria
+# (services/consolidado/migracoes/Dockerfile).
 #
 # Contexto de build: raiz do repositório. A lista de arquivos que entram no
 # contexto está em Dockerfile.dockerignore, ao lado deste arquivo.
@@ -28,13 +29,12 @@ ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
 
 WORKDIR /app
 
-# Dependências pelo lock: só o grupo do consolidado, com o pacote interno de
-# métricas instalado como pacote comum, sem editável. O pyproject de
-# seguranca entra só para o uv resolver o workspace; o pacote não é
-# instalado nesta task.
+# Dependências pelo lock: só o grupo do consolidado, com os pacotes internos
+# (observabilidade, seguranca) instalados como pacotes comuns, sem editável,
+# para que o código-fonte deles não precise ficar na imagem final.
 COPY pyproject.toml uv.lock ./
 COPY packages/observabilidade packages/observabilidade
-COPY packages/seguranca/pyproject.toml packages/seguranca/
+COPY packages/seguranca packages/seguranca
 RUN uv sync --frozen --only-group consolidado --no-editable \
     && rm -rf packages
 
@@ -50,10 +50,13 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Sem root: o worker só conecta ao banco e ao broker.
+# Sem root: o worker só conecta ao banco e ao broker. A API lê a chave TLS
+# montada do host, de modo 0640 e dono UID 1000, e roda como 1000:1000 pelo
+# `user` do serviço consolidado-api no compose, como lancamentos-api.
 USER nobody
 
-# Health e /metrics, ambos em porta interna (design 004 §12; 007 design §4).
-EXPOSE 8080 9464
+# Worker: health em 8080. API: HTTPS em 8443. Ambos: /metrics em 9464, porta
+# interna (design 004 §12; 007 design §4).
+EXPOSE 8080 8443 9464
 
 CMD ["python", "-m", "consolidado.worker"]
