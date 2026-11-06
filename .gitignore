@@ -9,6 +9,9 @@
 *.key
 *-key.pem
 
+# AC local e certificados gerados por infra/tls/gerar-certificados.sh (001-T3)
+infra/tls/gerados/
+
 # Python e uv
 .venv/
 __pycache__/
