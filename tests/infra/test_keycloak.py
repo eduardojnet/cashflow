@@ -1,9 +1,10 @@
 """Emissão de token por Client Credentials contra o Keycloak real (001-T4).
 
-Até 001-T5 o Keycloak não publica porta no host, então o teste roda dentro da
-rede do compose. Com o ambiente no ar, a partir da raiz do repositório:
+O teste roda dentro da rede de identidade (001-T5), pelo nome interno, para
+que a sonda de HTTP em texto claro na porta 8080 não dependa do que escuta no
+host. Com o ambiente no ar, a partir da raiz do repositório:
 
-    docker run --rm --network cashflow_default --env-file infra/.env \\
+    docker run --rm --network cashflow_rede-identidade --env-file infra/.env \\
       -e KEYCLOAK_URL=https://keycloak:8443 -e UV_PROJECT_ENVIRONMENT=/tmp/venv \\
       -v "$PWD":/w -w /w ghcr.io/astral-sh/uv:0.13.7-python3.12-alpine \\
       uv run --frozen pytest -p no:cacheprovider tests/infra/test_keycloak.py

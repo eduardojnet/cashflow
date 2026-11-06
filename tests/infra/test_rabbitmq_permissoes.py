@@ -1,9 +1,12 @@
 """Permissões mínimas dos usuários do RabbitMQ contra o broker real (001-T2).
 
 O RabbitMQ não publica porta no host (INFRA 6.3), então o teste roda dentro
-da rede do compose. Com o ambiente no ar, a partir da raiz do repositório:
+da rede de mensageria (001-T5). Essa rede é interna e sem saída; a rede de
+identidade entra só para o uv baixar as dependências. Com o ambiente no ar, a
+partir da raiz do repositório:
 
-    docker run --rm --network cashflow_default --env-file infra/.env \\
+    docker run --rm --network cashflow_rede-identidade \\
+      --network cashflow_rede-mensageria --env-file infra/.env \\
       -e RABBITMQ_HOST=rabbitmq -e UV_PROJECT_ENVIRONMENT=/tmp/venv \\
       -v "$PWD":/w -w /w ghcr.io/astral-sh/uv:0.13.7-python3.12-alpine \\
       uv run --frozen pytest -p no:cacheprovider tests/infra/test_rabbitmq_permissoes.py

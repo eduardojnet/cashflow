@@ -1,6 +1,8 @@
 # Ambiente local do CashFlow (001, TD-001: um único Compose).
 # Segredos: interpolados de infra/.env, ignorado pelo Git (INFRA 5.9, 5.10).
-# Bancos sem `ports`: inacessíveis a partir do host (INFRA 6.2).
+# Bancos e RabbitMQ sem `ports`, só em redes internas: inacessíveis a partir
+# do host (INFRA 6.1 a 6.3). Somente APIs e Keycloak são publicados, e apenas
+# em 127.0.0.1 (FR-007, INFRA 6.5, 6.6). Redes por fronteira: TD-002.
 name: cashflow
 
 services:
@@ -12,6 +14,8 @@ services:
     environment:
       POSTGRES_DB: livro
       POSTGRES_PASSWORD: ${PG_LIVRO_SENHA_SUPERUSUARIO:?defina PG_LIVRO_SENHA_SUPERUSUARIO em infra/.env}
+    networks:
+      - rede-livro
     volumes:
       # A partir do PostgreSQL 18 a imagem guarda os dados em
       # /var/lib/postgresql/18/docker; o volume monta o diretório pai.
@@ -30,6 +34,8 @@ services:
     environment:
       POSTGRES_DB: consolidado
       POSTGRES_PASSWORD: ${PG_CONSOLIDADO_SENHA_SUPERUSUARIO:?defina PG_CONSOLIDADO_SENHA_SUPERUSUARIO em infra/.env}
+    networks:
+      - rede-consolidado
     volumes:
       - vol-pg-consolidado:/var/lib/postgresql
     healthcheck:
@@ -54,6 +60,8 @@ services:
     environment:
       RABBITMQ_SENHA_RELAY: ${RABBITMQ_SENHA_RELAY:?defina RABBITMQ_SENHA_RELAY em infra/.env}
       RABBITMQ_SENHA_WORKER: ${RABBITMQ_SENHA_WORKER:?defina RABBITMQ_SENHA_WORKER em infra/.env}
+    networks:
+      - rede-mensageria
     volumes:
       - vol-rabbitmq:/var/lib/rabbitmq
       - ./rabbitmq/entrypoint.sh:/etc/rabbitmq/cashflow/entrypoint.sh:ro
@@ -83,10 +91,10 @@ services:
       KC_HTTPS_PORT: "8443"
       KC_HTTPS_CERTIFICATE_FILE: /opt/keycloak/conf/tls/keycloak.crt
       KC_HTTPS_CERTIFICATE_KEY_FILE: /opt/keycloak/conf/tls/keycloak.key
-      # Emissor fixo (`iss`) no endereço que o cliente técnico usa pelo host;
-      # a publicação em 127.0.0.1:8443 fica com 001-T5. As APIs buscam o JWKS
-      # pelo nome interno `keycloak` (backchannel dinâmico).
-      KC_HOSTNAME: https://localhost:8443
+      # Emissor fixo (`iss`) no endereço que o cliente técnico usa pelo host,
+      # o mesmo da publicação em loopback abaixo. As APIs buscam o JWKS pelo
+      # nome interno `keycloak` (backchannel dinâmico).
+      KC_HOSTNAME: https://localhost:${KEYCLOAK_PORTA_HOST:-8443}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       # Instância única: banco embutido no volume e cache local, sem cluster.
       # O banco embutido é desaconselhado para produção; aqui atende o
@@ -108,6 +116,12 @@ services:
       # dela, o segredo vigente é o gravado no volume (TD-005).
       KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS: ${KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS:?defina KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS em infra/.env}
       KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS: ${KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS:?defina KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS em infra/.env}
+    # Só a porta TLS, só em loopback (FR-006, FR-007; INFRA 6.5, 6.6).
+    # KEYCLOAK_PORTA_HOST troca a porta do host se 8443 estiver ocupada.
+    ports:
+      - "127.0.0.1:${KEYCLOAK_PORTA_HOST:-8443}:8443"
+    networks:
+      - rede-identidade
     volumes:
       - vol-keycloak:/opt/keycloak/data
       - ./keycloak/realm-cashflow.json:/opt/keycloak/data/import/realm-cashflow.json:ro
@@ -129,6 +143,33 @@ services:
       retries: 12
       start_period: 60s
     restart: unless-stopped
+
+# Quatro redes por fronteira (design 001 §3, TD-002). Não há rede comum entre
+# o lado do consolidado (worker, consolidado-api, coordenador) e pg-livro
+# (INFRA 6.7).
+#
+# Livro, consolidado e mensageria são internas e sem endereço IPv4 na ponte do
+# host (inhibit_ipv4): sem saída para fora e sem rota do host até os
+# contêineres, nem pelo IP interno (INFRA 6.1 a 6.3). A comunicação entre
+# contêineres da mesma rede continua normal.
+#
+# A identidade não é interna porque o Docker não publica portas de contêiner
+# ligado só a redes internas, e Keycloak e APIs precisam ser publicados em
+# loopback.
+networks:
+  rede-livro:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+  rede-consolidado:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+  rede-mensageria:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+  rede-identidade:
 
 volumes:
   vol-pg-livro:
