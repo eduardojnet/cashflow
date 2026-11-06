@@ -1,0 +1,15 @@
+# Pacote compartilhado de métricas (spec 007, TD-002): endpoint /metrics e
+# catálogo fechado das métricas de aplicação de INFRA 8.3 com os rótulos
+# permitidos por métrica (TD-003).
+[project]
+name = "observabilidade"
+version = "0.1.0"
+description = "Endpoint /metrics e métricas de aplicação do CashFlow"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "prometheus-client>=0.26.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.14"]
+build-backend = "uv_build"
