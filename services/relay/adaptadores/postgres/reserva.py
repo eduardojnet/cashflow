@@ -22,15 +22,16 @@ conexão, por exemplo `pool.connection` de psycopg_pool, com `autocommit=True`
 recomendado; `conexao.transaction()` é a transação inteira.
 """
 
-import uuid
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
-from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Any
 
 from psycopg import AsyncConnection
 from psycopg.rows import class_row
+
+# O evento é da aplicação (003-T2); a reserva só o materializa.
+from relay.aplicacao import EventoReservado
 
 FabricaConexao = Callable[[], AbstractAsyncContextManager[AsyncConnection[Any]]]
 
@@ -54,18 +55,6 @@ WHERE outbox.evento_id = escolhidos.evento_id
 RETURNING outbox.evento_id, outbox.posicao, outbox.tipo_evento, outbox.payload,
           outbox.tentativas, outbox.lease_ate
 """
-
-
-@dataclass(frozen=True)
-class EventoReservado:
-    """Evento reservado para uma tentativa de publicação."""
-
-    evento_id: uuid.UUID
-    posicao: int
-    tipo_evento: str
-    payload: dict[str, Any]
-    tentativas: int
-    lease_ate: datetime
 
 
 class ReservaOutboxPostgres:
