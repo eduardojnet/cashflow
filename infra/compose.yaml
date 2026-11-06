@@ -111,6 +111,78 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  relay:
+    # Relay da outbox (spec 003; 003-T5): reserva eventos pendentes, publica
+    # com confirms e `mandatory` e marca só o confirmado (design 003 §3). Só
+    # nas redes do livro e da mensageria: não alcança pg-consolidado (INFRA
+    # 6.7). Papel livro_relay e usuário `relay` do RabbitMQ (INFRA 5.11).
+    # Versões das imagens base: services/relay/Dockerfile.
+    #
+    # Pressupõe o esquema aplicado pelo serviço livro-migracao; sem ele, o
+    # ready fica falso.
+    build:
+      context: ..
+      dockerfile: services/relay/Dockerfile
+    environment:
+      PG_LIVRO_HOST: pg-livro
+      PG_LIVRO_SENHA_RELAY: ${PG_LIVRO_SENHA_RELAY:?defina PG_LIVRO_SENHA_RELAY em infra/.env}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_SENHA_RELAY: ${RABBITMQ_SENHA_RELAY:?defina RABBITMQ_SENHA_RELAY em infra/.env}
+      # Intervalo, lote, lease e espera configuráveis (DQ-002; D-002). Os
+      # testes de falha encurtam a espera pelo ambiente do host.
+      RELAY_INTERVALO_SEGUNDOS: ${RELAY_INTERVALO_SEGUNDOS:-1}
+      RELAY_LOTE: ${RELAY_LOTE:-100}
+      RELAY_LEASE_SEGUNDOS: ${RELAY_LEASE_SEGUNDOS:-30}
+      RELAY_TIMEOUT_CONFIRMACAO_SEGUNDOS: ${RELAY_TIMEOUT_CONFIRMACAO_SEGUNDOS:-5}
+      RELAY_ESPERA_BASE_SEGUNDOS: ${RELAY_ESPERA_BASE_SEGUNDOS:-1}
+      RELAY_ESPERA_TETO_SEGUNDOS: ${RELAY_ESPERA_TETO_SEGUNDOS:-60}
+      # Health e /metrics em portas internas, sem publicação no host (INFRA
+      # 6.1; 007 design §4).
+      HEALTH_PORTA: "8080"
+      METRICAS_PORTA: "9464"
+    networks:
+      - rede-livro
+      - rede-mensageria
+    depends_on:
+      pg-livro:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      # Pronto = /health/ready com 200: outbox legível como livro_relay e
+      # RabbitMQ conectado (INFRA 8.5).
+      test: ["CMD", "python", "-m", "relay.adaptadores.http.sonda"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
+  relay-republicar:
+    # Republicação a partir de uma posição (003-T4; TD-004; INFRA 7.6), com a
+    # imagem do relay e o papel livro_replay (INFRA 6.4). Só na rede do livro:
+    # o comando apenas reabre eventos no banco; quem publica é o relay.
+    # Execução sob demanda, pelo operador:
+    #
+    #   docker compose -f infra/compose.yaml run --rm relay-republicar --desde-posicao N
+    #
+    # O perfil mantém o serviço fora do `up`, como livro-migracao.
+    profiles: ["operacao"]
+    build:
+      context: ..
+      dockerfile: services/relay/Dockerfile
+    entrypoint: ["python", "-m", "relay.comandos.republicar"]
+    command: ["--help"]
+    environment:
+      PG_LIVRO_HOST: pg-livro
+      PG_LIVRO_SENHA_REPLAY: ${PG_LIVRO_SENHA_REPLAY:?defina PG_LIVRO_SENHA_REPLAY em infra/.env}
+    networks:
+      - rede-livro
+    depends_on:
+      pg-livro:
+        condition: service_healthy
+    restart: "no"
+
   pg-consolidado:
     # Mesma versão e fonte de pg-livro (TD-007, 2026-11-06).
     image: postgres:18.6-alpine3.24

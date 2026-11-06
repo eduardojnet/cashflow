@@ -53,6 +53,7 @@ ROTULOS_PERMITIDOS: dict[str, frozenset[str]] = {
     "cashflow_jwt_falhas_total": frozenset({"motivo"}),
     "cashflow_jwks_falhas_total": frozenset(),
     "cashflow_http_requisicoes_total": frozenset({"componente", "status"}),
+    "cashflow_relay_falhas_publicacao_total": frozenset({"resultado"}),
 }
 
 # Defesa adicional: nenhum rótulo pode sugerir dado sensível, mesmo que
@@ -145,6 +146,14 @@ CATALOGO: dict[str, DefinicaoMetrica] = {
             TipoMetrica.CONTADOR,
             "Respostas HTTP das APIs por componente e status",
             ("componente", "status"),
+        ),
+        # Fora de INFRA 8.3 (007 TD-006): `resultado` só assume os desfechos
+        # de falha do relay (devolvido, recusado, sem_confirmacao, falha).
+        DefinicaoMetrica(
+            "cashflow_relay_falhas_publicacao_total",
+            TipoMetrica.CONTADOR,
+            "Publicações do relay sem confirm positivo, por resultado",
+            ("resultado",),
         ),
     )
 }

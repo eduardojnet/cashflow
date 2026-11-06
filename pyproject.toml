@@ -24,7 +24,6 @@ pythonpath = ["services"]
 
 [dependency-groups]
 dev = [
-    "aio-pika>=10.2.2",
     "pytest>=9.2.0",
     # Membro do workspace instalado no ambiente da raiz para que
     # `uv run pytest packages/observabilidade` rode a partir da raiz.
@@ -34,6 +33,7 @@ dev = [
     "httpx2>=2.16.0",
     {include-group = "migracoes"},
     {include-group = "lancamentos"},
+    {include-group = "relay"},
 ]
 # API de lançamentos (002-T5): FastAPI e uvicorn (ST-Q-002), psycopg 3 com
 # pool assíncrono (ST-Q-003) e os pacotes internos de JWT e métricas. Grupo
@@ -52,5 +52,14 @@ lancamentos = [
 # inclui para `uv run alembic` no host.
 migracoes = [
     "alembic>=1.20.1",
+    "psycopg[binary]>=3.3.8",
+]
+# Relay da outbox (003-T5): aio-pika (ST-Q-004), psycopg 3 com pool
+# assíncrono (ST-Q-003) e o pacote interno de métricas. Grupo próprio para
+# que a imagem do relay instale só isto (`uv sync --only-group relay`).
+relay = [
+    "aio-pika>=10.2.2",
+    "observabilidade",
+    "psycopg-pool>=3.3.3",
     "psycopg[binary]>=3.3.8",
 ]

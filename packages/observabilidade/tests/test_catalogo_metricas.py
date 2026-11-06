@@ -13,7 +13,8 @@ from observabilidade import (
 )
 
 # Mapa de métricas de 007 design §4 que saem dos componentes Python,
-# incluindo a emenda TD-005 (requisições HTTP por status).
+# incluindo as emendas TD-005 (requisições HTTP por status) e TD-006 (falhas
+# de publicação do relay).
 NOMES_DO_MAPA = {
     "cashflow_outbox_pendentes",
     "cashflow_outbox_idade_mais_antigo_segundos",
@@ -27,6 +28,7 @@ NOMES_DO_MAPA = {
     "cashflow_jwt_falhas_total",
     "cashflow_jwks_falhas_total",
     "cashflow_http_requisicoes_total",
+    "cashflow_relay_falhas_publicacao_total",
 }
 
 
@@ -43,6 +45,10 @@ def test_rotulos_do_catalogo_seguem_o_design() -> None:
     assert CATALOGO["cashflow_http_requisicoes_total"].rotulos == (
         "componente",
         "status",
+    )
+    assert CATALOGO["cashflow_relay_falhas_publicacao_total"].rotulos == ("resultado",)
+    assert (
+        CATALOGO["cashflow_relay_falhas_publicacao_total"].tipo is TipoMetrica.CONTADOR
     )
 
 

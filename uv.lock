@@ -110,6 +110,12 @@ migracoes = [
     { name = "alembic" },
     { name = "psycopg", extra = ["binary"] },
 ]
+relay = [
+    { name = "aio-pika" },
+    { name = "observabilidade" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "psycopg-pool" },
+]
 
 [package.metadata]
 
@@ -137,6 +143,12 @@ lancamentos = [
 migracoes = [
     { name = "alembic", specifier = ">=1.20.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" },
+]
+relay = [
+    { name = "aio-pika", specifier = ">=10.2.2" },
+    { name = "observabilidade", editable = "packages/observabilidade" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" },
+    { name = "psycopg-pool", specifier = ">=3.3.3" },
 ]
 
 [[package]]

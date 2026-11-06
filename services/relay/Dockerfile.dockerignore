@@ -1,0 +1,15 @@
+# Contexto mínimo da imagem do relay: tudo fora, exceto o que o Dockerfile
+# copia. Mantém infra/.env, chaves, testes e a .venv fora do build (INFRA 5.9).
+*
+!pyproject.toml
+!uv.lock
+!packages/observabilidade/pyproject.toml
+!packages/observabilidade/src
+!packages/seguranca/pyproject.toml
+!services/relay/__init__.py
+!services/relay/__main__.py
+!services/relay/principal.py
+!services/relay/aplicacao
+!services/relay/adaptadores
+!services/relay/comandos
+**/__pycache__

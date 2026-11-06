@@ -93,6 +93,19 @@ class PublicadorRabbitMQ:
             await self._conexao.close()
         self._conexao = self._canal = self._exchange = None
 
+    def conectado(self) -> bool:
+        """Conexão e canal de confirms abertos agora (ready; INFRA 8.5).
+
+        Falso antes de `abrir`, depois de `fechar` e enquanto a conexão
+        robusta tenta reconectar.
+        """
+        return (
+            self._conexao is not None
+            and self._canal is not None
+            and self._conexao.connected.is_set()
+            and not self._canal.is_closed
+        )
+
     async def __aenter__(self) -> Self:
         await self.abrir()
         return self
