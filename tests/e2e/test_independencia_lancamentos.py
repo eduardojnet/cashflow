@@ -82,6 +82,8 @@ class Ambiente:
     # Publicada pela consolidado-api (004-T5); só precisa não colidir com o
     # ambiente principal, que pode estar no ar.
     porta_consolidado: int
+    # Publicada pelo Grafana (007-T1), pelo mesmo motivo.
+    porta_grafana: int
 
     def compose(
         self, *args: str, timeout: int = 120
@@ -91,6 +93,7 @@ class Ambiente:
             "KEYCLOAK_PORTA_HOST": str(self.porta_keycloak),
             "LANCAMENTOS_API_PORTA_HOST": str(self.porta_api),
             "CONSOLIDADO_API_PORTA_HOST": str(self.porta_consolidado),
+            "GRAFANA_PORTA_HOST": str(self.porta_grafana),
         }
         return subprocess.run(
             ["docker", "compose", "-p", PROJETO, "-f", str(COMPOSE), *args],
@@ -183,6 +186,7 @@ def ambiente() -> Iterator[Ambiente]:
         porta_keycloak=_porta_livre(),
         porta_api=_porta_livre(),
         porta_consolidado=_porta_livre(),
+        porta_grafana=_porta_livre(),
     )
     try:
         # Bancos primeiro, migrações do livro (002-T2) e do consolidado
