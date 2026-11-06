@@ -1,4 +1,4 @@
-"""Processo do worker do consolidado (004-T3; design 004 §3, §12).
+"""Processo do worker do consolidado (004-T3, T4; design 004 §3, §12).
 
     python -m consolidado.worker
 
@@ -39,12 +39,18 @@ async def executar(configuracao: ConfiguracaoWorker) -> None:
     pool = criar_pool(configuracao)
     medir_pool(pool, metricas)
     projetar = ProjetarLancamento(
-        UnidadeDeTrabalhoProjecaoPostgres(fabrica_de_conexao(pool))
+        UnidadeDeTrabalhoProjecaoPostgres(fabrica_de_conexao(pool)), metricas_worker
     )
     processador = ProcessadorMensagens(projetar, metricas_worker)
     consumidor = ConsumidorRabbitMQ(configuracao.url_rabbitmq, configuracao.prefetch)
     banco_pronto = banco_pronto_de(pool, configuracao.prontidao_timeout_segundos)
-    laco = LacoWorker(configuracao, consumidor, processador.processar, banco_pronto)
+    laco = LacoWorker(
+        configuracao,
+        consumidor,
+        processador.processar,
+        banco_pronto,
+        projetar.publicar_checkpoint,
+    )
     saude = ServidorSaude(prontidao_de(banco_pronto, consumidor))
 
     parar = asyncio.Event()

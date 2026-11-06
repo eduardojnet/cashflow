@@ -8,6 +8,7 @@ devolver o que não foi confirmado, e a sessão seguinte recomeça.
 import asyncio
 import json
 import logging
+from collections.abc import Awaitable, Callable
 
 import pytest
 from consolidado.adaptadores.logs import REDIGIDO, FormatadorJson
@@ -93,9 +94,13 @@ def _banco(respostas: list[bool]) -> tuple[list[int], BancoPronto]:
     return chamadas, pronto
 
 
-def _executar(consumidor: _Consumidor, banco_respostas: list[bool]) -> list[int]:
+def _executar(
+    consumidor: _Consumidor,
+    banco_respostas: list[bool],
+    preparar: Callable[[], Awaitable[object]] | None = None,
+) -> list[int]:
     chamadas, pronto = _banco(banco_respostas)
-    laco = LacoWorker(CONFIGURACAO, consumidor, _nada, pronto)
+    laco = LacoWorker(CONFIGURACAO, consumidor, _nada, pronto, preparar)
 
     async def cenario() -> None:
         await asyncio.wait_for(laco.executar(consumidor.parar_processo), 5)
@@ -231,3 +236,32 @@ def test_log_redige_campos_e_credenciais_sensiveis() -> None:
     assert "s3nh4" not in linha["mensagem"]
     assert (linha["valor"], linha["saldo_dia"]) == (REDIGIDO, REDIGIDO)
     assert linha["evento_id"] == "e1"
+
+
+def test_preparar_roda_a_cada_sessao_com_o_banco_pronto_antes_de_consumir() -> None:
+    # O worker publica ali o checkpoint nas métricas (004-T4).
+    consumidor = _Consumidor(["canal_fechado", "parar"])
+    ordem: list[tuple[str, int]] = []
+
+    async def preparar() -> None:
+        ordem.append(("preparar", consumidor.aberturas))
+
+    _executar(consumidor, [False, True, True], preparar)
+
+    # Banco fora na 1ª tentativa: nada roda; depois, uma vez por sessão,
+    # sempre antes de abrir o consumidor.
+    assert ordem == [("preparar", 0), ("preparar", 1)]
+
+
+def test_falha_em_preparar_encerra_a_sessao_sem_consumir_e_recomeca() -> None:
+    consumidor = _Consumidor(["parar"])
+    falhas = [RuntimeError("banco caiu")]
+
+    async def preparar() -> None:
+        if falhas:
+            raise falhas.pop()
+
+    _executar(consumidor, [], preparar)
+
+    assert (consumidor.aberturas, consumidor.sessoes) == (1, 1)
+    assert consumidor.fechamentos == 2

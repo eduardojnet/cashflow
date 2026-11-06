@@ -1,10 +1,11 @@
-"""Worker do consolidado contra RabbitMQ e PostgreSQL reais (004-T3).
+"""Worker do consolidado contra RabbitMQ e PostgreSQL reais (004-T3, T4).
 
 FR-001: cada lançamento é projetado uma única vez; duplicata não altera o
 saldo. FR-002: ACK só depois do commit; falha antes do commit ou queda entre
 o commit e o ACK devolvem a mensagem à fila, e a reentrega não duplica.
 FR-003: conflito e mensagem ilegível vão para a quarentena, sem efeito no
-saldo e sem descarte.
+saldo e sem descarte. FR-009: o checkpoint gravado na transação chega às
+métricas do worker (regras de avanço em test_checkpoint_lacunas.py).
 
 PostgreSQL descartável do consolidado com papéis e migrações reais (INFRA
 9.1) e RabbitMQ descartável com a topologia, os usuários e as permissões do
@@ -244,14 +245,16 @@ async def _executar_worker(
     )
     await pool.open(wait=True)
     try:
-        unidade = _FalhaAntesDoCommit(
-            UnidadeDeTrabalhoProjecaoPostgres(fabrica_de_conexao(pool)),
-            falhas_antes_do_commit,
-        )
+        real = UnidadeDeTrabalhoProjecaoPostgres(fabrica_de_conexao(pool))
+        unidade = _FalhaAntesDoCommit(real, falhas_antes_do_commit)
+        observador = MetricasWorker(execucao.metricas)
         projetar = _QuedaEntreCommitEAck(
-            ProjetarLancamento(unidade), quedas_antes_do_ack
+            ProjetarLancamento(unidade, observador), quedas_antes_do_ack
         )
-        processador = ProcessadorMensagens(projetar, MetricasWorker(execucao.metricas))
+        # A leitura do checkpoint na abertura da sessão usa a unidade real:
+        # as falhas simuladas são das transações das mensagens.
+        publicar_checkpoint = ProjetarLancamento(real, observador).publicar_checkpoint
+        processador = ProcessadorMensagens(projetar, observador)
 
         async def tratar(mensagem: MensagemRecebida) -> None:
             try:
@@ -273,6 +276,7 @@ async def _executar_worker(
             ConsumidorRabbitMQ(broker.url("worker"), prefetch=10),
             tratar,
             banco_pronto_de(pool, 2.0),
+            publicar_checkpoint,
         )
         await asyncio.wait_for(laco.executar(parar), TIMEOUT_SEGUNDOS)
     finally:
@@ -515,3 +519,34 @@ def _aguardar_mensagens(broker: Broker, quantidade: int) -> bool:
             return True
         time.sleep(0.2)
     return False
+
+
+# --- FR-009: checkpoint nas métricas -----------------------------------------
+
+
+def _estado_checkpoint(banco: Consolidado) -> tuple[str, int, int]:
+    [(geracao, posicao, lacunas)] = _consultar(
+        banco,
+        "SELECT k.geracao_id, k.posicao_continua,"
+        " (SELECT count(*) FROM lacuna l WHERE l.geracao_id = k.geracao_id)"
+        " FROM controle_projecao c"
+        " JOIN checkpoint k ON k.geracao_id = c.geracao_ativa_id",
+    )
+    return str(geracao), posicao, lacunas
+
+
+def test_worker_publica_checkpoint_e_lacunas_da_geracao_ativa_nas_metricas(
+    banco: Consolidado, broker: Broker, data: date
+) -> None:
+    # As posições dos outros testes do módulo deixam o checkpoint onde
+    # estiver; a métrica tem de repetir o que a transação gravou.
+    _publicar_eventos(broker, _evento(data, "CREDITO", "5.00"))
+
+    execucao = _rodar(banco, broker, esperadas=1)
+
+    assert execucao.desfechos == [Desfecho.APLICADO]
+    geracao, posicao, lacunas = _estado_checkpoint(banco)
+    rotulos = {"geracao": geracao}
+    registro = execucao.metricas.registro
+    assert registro.get_sample_value("cashflow_checkpoint_posicao", rotulos) == posicao
+    assert registro.get_sample_value("cashflow_lacunas", rotulos) == lacunas

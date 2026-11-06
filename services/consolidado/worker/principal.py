@@ -12,6 +12,10 @@ processo:
   o broker devolve as mensagens pendentes, que voltam como reentrega;
 - RabbitMQ fora: a abertura falha e é tentada de novo a cada intervalo.
 
+Com o banco pronto, a sessão roda `preparar` antes de consumir: o worker
+publica ali o checkpoint da geração ativa nas métricas (004-T4). Falha em
+`preparar` encerra a sessão como qualquer outra falha.
+
 Mensagem que falha sempre fica na fila, sem descarte (INFRA 4.10), e aparece
 em `cashflow_worker_reentregas_total`.
 
@@ -49,6 +53,7 @@ log = logging.getLogger("consolidado.worker.laco")
 
 Pool = AsyncConnectionPool[AsyncConnection[Any]]
 BancoPronto = Callable[[], Awaitable[bool]]
+Preparar = Callable[[], Awaitable[object]]
 
 
 def _obrigatoria(ambiente: Mapping[str, str], nome: str) -> str:
@@ -181,11 +186,13 @@ class LacoWorker:
         consumidor: Consumidor,
         tratar: Tratar,
         banco_pronto: BancoPronto,
+        preparar: Preparar | None = None,
     ) -> None:
         self._configuracao = configuracao
         self._consumidor = consumidor
         self._tratar = tratar
         self._banco_pronto = banco_pronto
+        self._preparar = preparar
 
     async def executar(self, parar: asyncio.Event) -> None:
         while not parar.is_set():
@@ -203,6 +210,8 @@ class LacoWorker:
         encerrar = asyncio.Event()
         vigia = asyncio.create_task(self._vigiar_banco(parar, encerrar))
         try:
+            if self._preparar is not None:
+                await self._preparar()
             await self._consumidor.abrir()
             log.info("consumo iniciado")
             await self._consumidor.consumir(self._tratar, encerrar)

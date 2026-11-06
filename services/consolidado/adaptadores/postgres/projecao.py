@@ -1,8 +1,9 @@
-"""Unidade de trabalho da projeção sobre PostgreSQL com psycopg 3 (004-T3).
+"""Unidade de trabalho da projeção sobre PostgreSQL com psycopg 3 (004-T3, T4).
 
 Implementa a transação de design 004 §3 com o papel consolidado_worker, que
-só insere na inbox, na contribuição, no marcador e na quarentena e só
-atualiza as colunas de valor do saldo (migração 0001).
+só insere na inbox, na contribuição, no marcador e na quarentena, só
+atualiza as colunas de valor do saldo e do checkpoint e insere e apaga
+lacunas (migração 0001).
 
 Deduplicação pelas chaves do banco, não por consulta prévia (TD-001): o
 INSERT com `ON CONFLICT DO NOTHING` espera a transação concorrente que
@@ -12,6 +13,11 @@ ocupa a chave é lida para comparar hashes.
 Saldo do dia: a linha (geração, data) é criada zerada se não existir e
 travada com `FOR UPDATE` até o COMMIT; o domínio calcula os totais novos
 (TD-004). Contribuições concorrentes na mesma data serializam nessa linha.
+
+Checkpoint (TD-006): a linha da geração é travada com `FOR UPDATE` depois do
+saldo, sempre nessa ordem, e serializa as projeções da geração. Em READ
+COMMITTED, quem esperou o bloqueio lê a linha já gravada pela anterior e, nos
+comandos seguintes, as contribuições e lacunas que ela confirmou.
 
 Conexões: a fábrica entrega uma conexão por transação, por exemplo
 `pool.connection` de psycopg_pool, com `autocommit=True`, para que
@@ -27,7 +33,7 @@ from uuid import UUID
 import psycopg
 from psycopg import AsyncConnection
 
-from consolidado.aplicacao import ContribuicaoExistente
+from consolidado.aplicacao import ContribuicaoExistente, EstadoCheckpoint
 from consolidado.dominio import Contribuicao, SaldoDiario
 
 FabricaConexao = Callable[[], AbstractAsyncContextManager[AsyncConnection[Any]]]
@@ -147,6 +153,78 @@ class TransacaoProjecaoPostgres:
             "INSERT INTO marcador_inclusao (geracao_id, lancamento_id, posicao)"
             " VALUES (%s, %s, %s)",
             (geracao_id, contribuicao.lancamento_id, contribuicao.posicao),
+        )
+
+    async def checkpoint_para_atualizar(self, geracao_id: int) -> int:
+        cursor = await self._conexao.execute(
+            "SELECT posicao_continua FROM checkpoint WHERE geracao_id = %s FOR UPDATE",
+            (geracao_id,),
+        )
+        linha = await cursor.fetchone()
+        if linha is None:
+            raise RuntimeError("geração sem checkpoint (migração 0001)")
+        posicao: int = linha[0]
+        return posicao
+
+    async def remover_lacuna(self, geracao_id: int, posicao: int) -> bool:
+        cursor = await self._conexao.execute(
+            "DELETE FROM lacuna WHERE geracao_id = %s AND posicao = %s RETURNING 1",
+            (geracao_id, posicao),
+        )
+        return await cursor.fetchone() is not None
+
+    async def maior_posicao_abaixo(self, geracao_id: int, posicao: int) -> int:
+        # Índice de UNIQUE (geracao_id, posicao): leitura de uma entrada.
+        cursor = await self._conexao.execute(
+            "SELECT coalesce(max(posicao), 0) FROM contribuicao"
+            " WHERE geracao_id = %s AND posicao < %s",
+            (geracao_id, posicao),
+        )
+        linha = await cursor.fetchone()
+        assert linha is not None
+        maior: int = linha[0]
+        return maior
+
+    async def registrar_lacunas(self, geracao_id: int, de: int, ate: int) -> None:
+        await self._conexao.execute(
+            "INSERT INTO lacuna (geracao_id, posicao)"
+            " SELECT %s, generate_series(%s::bigint, %s::bigint)"
+            " ON CONFLICT (geracao_id, posicao) DO NOTHING",
+            (geracao_id, de, ate),
+        )
+
+    async def fim_da_continuidade(self, geracao_id: int) -> int:
+        cursor = await self._conexao.execute(
+            "SELECT coalesce("
+            " (SELECT min(posicao) - 1 FROM lacuna WHERE geracao_id = %s),"
+            " (SELECT max(posicao) FROM contribuicao WHERE geracao_id = %s),"
+            " 0)",
+            (geracao_id, geracao_id),
+        )
+        linha = await cursor.fetchone()
+        assert linha is not None
+        fim: int = linha[0]
+        return fim
+
+    async def gravar_checkpoint(self, geracao_id: int, posicao: int) -> None:
+        await self._conexao.execute(
+            "UPDATE checkpoint SET posicao_continua = %s, atualizado_em = now()"
+            " WHERE geracao_id = %s",
+            (posicao, geracao_id),
+        )
+
+    async def estado_checkpoint(self, geracao_id: int) -> EstadoCheckpoint:
+        cursor = await self._conexao.execute(
+            "SELECT posicao_continua,"
+            " (SELECT count(*) FROM lacuna WHERE geracao_id = %s)"
+            " FROM checkpoint WHERE geracao_id = %s",
+            (geracao_id, geracao_id),
+        )
+        linha = await cursor.fetchone()
+        if linha is None:
+            raise RuntimeError("geração sem checkpoint (migração 0001)")
+        return EstadoCheckpoint(
+            geracao_id=geracao_id, posicao_continua=linha[0], lacunas=linha[1]
         )
 
     async def quarentenar(

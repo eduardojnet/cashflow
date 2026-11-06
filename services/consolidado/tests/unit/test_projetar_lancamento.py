@@ -1,8 +1,9 @@
-"""Caso de uso do worker sem infraestrutura (004-T3; design 004 §3).
+"""Caso de uso do worker sem infraestrutura (004-T3, T4; design 004 §3).
 
 A unidade de trabalho falsa guarda o estado como o banco guardaria (inbox,
-contribuição, saldo, marcador e quarentena) e só o publica no "commit", para
-os testes verem o que cada desfecho grava e o que desfaz.
+contribuição, saldo, marcador, checkpoint, lacunas e quarentena) e só o
+publica no "commit", para os testes verem o que cada desfecho grava e o que
+desfaz.
 """
 
 import asyncio
@@ -21,6 +22,7 @@ from consolidado.aplicacao import (
     MOTIVO_JSON_INVALIDO,
     ContribuicaoExistente,
     Desfecho,
+    EstadoCheckpoint,
     MensagemEvento,
     ProjetarLancamento,
     TransacaoProjecao,
@@ -37,6 +39,8 @@ class _Estado:
         self.contribuicoes: dict[tuple[int, UUID], Contribuicao] = {}
         self.saldos: dict[tuple[int, date], SaldoDiario] = {}
         self.marcadores: dict[tuple[int, UUID], int] = {}
+        self.checkpoints: dict[int, int] = {GERACAO: 0}
+        self.lacunas: set[tuple[int, int]] = set()
         self.quarentena: list[tuple[UUID | None, str, bytes]] = []
 
     def copia(self) -> "_Estado":
@@ -45,6 +49,8 @@ class _Estado:
         outro.contribuicoes = dict(self.contribuicoes)
         outro.saldos = dict(self.saldos)
         outro.marcadores = dict(self.marcadores)
+        outro.checkpoints = dict(self.checkpoints)
+        outro.lacunas = set(self.lacunas)
         outro.quarentena = list(self.quarentena)
         return outro
 
@@ -95,6 +101,42 @@ class _Transacao:
         chave = (geracao_id, contribuicao.lancamento_id)
         assert chave not in self.estado.marcadores
         self.estado.marcadores[chave] = contribuicao.posicao
+
+    def _posicoes(self, geracao_id: int) -> list[int]:
+        return [
+            c.posicao
+            for (g, _), c in self.estado.contribuicoes.items()
+            if g == geracao_id
+        ]
+
+    async def checkpoint_para_atualizar(self, geracao_id: int) -> int:
+        return self.estado.checkpoints[geracao_id]
+
+    async def remover_lacuna(self, geracao_id: int, posicao: int) -> bool:
+        if (geracao_id, posicao) not in self.estado.lacunas:
+            return False
+        self.estado.lacunas.remove((geracao_id, posicao))
+        return True
+
+    async def maior_posicao_abaixo(self, geracao_id: int, posicao: int) -> int:
+        return max((p for p in self._posicoes(geracao_id) if p < posicao), default=0)
+
+    async def registrar_lacunas(self, geracao_id: int, de: int, ate: int) -> None:
+        self.estado.lacunas.update((geracao_id, p) for p in range(de, ate + 1))
+
+    async def fim_da_continuidade(self, geracao_id: int) -> int:
+        lacunas = [p for g, p in self.estado.lacunas if g == geracao_id]
+        if lacunas:
+            return min(lacunas) - 1
+        return max(self._posicoes(geracao_id), default=0)
+
+    async def gravar_checkpoint(self, geracao_id: int, posicao: int) -> None:
+        self.estado.checkpoints[geracao_id] = posicao
+
+    async def estado_checkpoint(self, geracao_id: int) -> EstadoCheckpoint:
+        lacunas = sum(1 for g, _ in self.estado.lacunas if g == geracao_id)
+        continua = self.estado.checkpoints[geracao_id]
+        return EstadoCheckpoint(geracao_id, continua, lacunas)
 
     async def quarentenar(
         self, evento_id: UUID | None, motivo: str, payload_bruto: bytes
@@ -149,8 +191,20 @@ def _mensagem(evento: dict[str, object]) -> MensagemEvento:
     )
 
 
-def _projetar(unidade: _Unidade, *eventos: dict[str, object]) -> list[Desfecho]:
-    caso = ProjetarLancamento(unidade)
+class _Observador:
+    def __init__(self) -> None:
+        self.estados: list[EstadoCheckpoint] = []
+
+    def checkpoint(self, estado: EstadoCheckpoint) -> None:
+        self.estados.append(estado)
+
+
+def _projetar(
+    unidade: _Unidade,
+    *eventos: dict[str, object],
+    observador: _Observador | None = None,
+) -> list[Desfecho]:
+    caso = ProjetarLancamento(unidade, observador)
 
     async def executar() -> list[Desfecho]:
         return [await caso.executar(_mensagem(e)) for e in eventos]
@@ -328,3 +382,126 @@ def test_somente_desfechos_de_quarentena_contam_como_quarentena() -> None:
         Desfecho.QUARENTENA_CONFLITO_LANCAMENTO,
         Desfecho.QUARENTENA_CONFLITO_POSICAO,
     }
+
+
+# --- checkpoint e lacunas (004-T4; FR-009; TD-006) ---------------------------
+
+
+def _checkpoint(unidade: _Unidade) -> tuple[int, set[int]]:
+    lacunas = {p for g, p in unidade.estado.lacunas if g == GERACAO}
+    return unidade.estado.checkpoints[GERACAO], lacunas
+
+
+def _posicoes(*posicoes: int) -> list[dict[str, object]]:
+    return [_evento(posicao=p) for p in posicoes]
+
+
+def test_eventos_1_2_4_deixam_checkpoint_2_e_lacuna_3() -> None:
+    unidade = _Unidade()
+
+    _projetar(unidade, *_posicoes(1, 2, 4))
+
+    assert _checkpoint(unidade) == (2, {3})
+
+
+def test_chegada_da_lacuna_avanca_o_checkpoint_e_remove_a_lacuna() -> None:
+    unidade = _Unidade()
+    _projetar(unidade, *_posicoes(1, 2, 4))
+
+    _projetar(unidade, *_posicoes(3))
+
+    assert _checkpoint(unidade) == (4, set())
+
+
+def test_varias_lacunas_fecham_em_qualquer_ordem() -> None:
+    unidade = _Unidade()
+
+    _projetar(unidade, *_posicoes(3, 6))
+    assert _checkpoint(unidade) == (0, {1, 2, 4, 5})
+
+    _projetar(unidade, *_posicoes(2, 1))
+    assert _checkpoint(unidade) == (3, {4, 5})
+
+    _projetar(unidade, *_posicoes(5))
+    assert _checkpoint(unidade) == (3, {4})
+
+    _projetar(unidade, *_posicoes(4))
+    assert _checkpoint(unidade) == (6, set())
+
+
+def test_posicao_seguinte_sem_lacuna_avanca_uma_posicao() -> None:
+    unidade = _Unidade()
+
+    _projetar(unidade, *_posicoes(1, 2, 3))
+
+    assert _checkpoint(unidade) == (3, set())
+
+
+def test_duplicata_e_quarentena_nao_movem_o_checkpoint() -> None:
+    unidade = _Unidade()
+    original = _evento(posicao=1)
+    republicado = {**original, "evento_id": str(uuid.uuid4())}
+    intruso = _evento(posicao=1)
+    observador = _Observador()
+
+    desfechos = _projetar(
+        unidade, original, original, republicado, intruso, observador=observador
+    )
+
+    assert desfechos == [
+        Desfecho.APLICADO,
+        Desfecho.EVENTO_DUPLICADO,
+        Desfecho.LANCAMENTO_DUPLICADO,
+        Desfecho.QUARENTENA_CONFLITO_POSICAO,
+    ]
+    assert _checkpoint(unidade) == (1, set())
+    # Só o lançamento aplicado publica o checkpoint.
+    assert observador.estados == [EstadoCheckpoint(GERACAO, 1, 0)]
+
+
+def test_observador_recebe_checkpoint_e_lacunas_apos_o_commit() -> None:
+    unidade = _Unidade()
+    observador = _Observador()
+
+    _projetar(unidade, *_posicoes(1, 4, 2), observador=observador)
+
+    assert observador.estados == [
+        EstadoCheckpoint(GERACAO, 1, 0),
+        EstadoCheckpoint(GERACAO, 1, 2),
+        EstadoCheckpoint(GERACAO, 2, 1),
+    ]
+
+
+def test_falha_antes_do_commit_nao_move_checkpoint_nem_publica() -> None:
+    class _Falha(_Unidade):
+        @asynccontextmanager
+        async def _transacao(self) -> AsyncIterator[TransacaoProjecao]:
+            async with super()._transacao() as transacao:
+                yield transacao
+                raise ConnectionError("banco fora")
+
+    unidade = _Falha()
+    observador = _Observador()
+    caso = ProjetarLancamento(unidade, observador)
+
+    try:
+        asyncio.run(caso.executar(_mensagem(_evento(posicao=3))))
+    except ConnectionError:
+        pass
+    else:
+        raise AssertionError("a falha de banco deveria propagar")
+    assert _checkpoint(unidade) == (0, set())
+    assert observador.estados == []
+
+
+def test_publicar_checkpoint_le_a_geracao_ativa_sem_gravar() -> None:
+    unidade = _Unidade()
+    _projetar(unidade, *_posicoes(1, 3))
+    commits = unidade.commits
+    observador = _Observador()
+
+    estado = asyncio.run(ProjetarLancamento(unidade, observador).publicar_checkpoint())
+
+    assert estado == EstadoCheckpoint(GERACAO, 1, 1)
+    assert observador.estados == [estado]
+    assert unidade.commits == commits

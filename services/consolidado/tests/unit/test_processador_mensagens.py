@@ -13,7 +13,7 @@ import uuid
 import pytest
 from consolidado.adaptadores.logs import FormatadorJson
 from consolidado.adaptadores.rabbitmq import ProcessadorMensagens, decodificar
-from consolidado.aplicacao import Desfecho, MensagemEvento
+from consolidado.aplicacao import Desfecho, EstadoCheckpoint, MensagemEvento
 from consolidado.worker.metricas import MetricasWorker
 from observabilidade import Metricas
 
@@ -187,3 +187,21 @@ def test_log_do_processamento_nao_repete_o_corpo(
     assert linha["desfecho"] == "quarentena_conflito_evento"
     assert linha["evento_id"] == mensagem.message_id
     assert "987654" not in json.dumps(linha)
+
+
+def test_checkpoint_e_lacunas_viram_medidores_por_geracao() -> None:
+    metricas = Metricas()
+    observador = MetricasWorker(metricas)
+
+    # Os medidores por geração só aparecem com a primeira leitura (004-T4).
+    assert metricas.registro.get_sample_value(
+        "cashflow_checkpoint_posicao", {"geracao": "1"}
+    ) is None
+    observador.checkpoint(EstadoCheckpoint(geracao_id=1, posicao_continua=2, lacunas=1))
+    observador.checkpoint(EstadoCheckpoint(geracao_id=1, posicao_continua=4, lacunas=0))
+
+    rotulos = {"geracao": "1"}
+    assert metricas.registro.get_sample_value(
+        "cashflow_checkpoint_posicao", rotulos
+    ) == 4
+    assert metricas.registro.get_sample_value("cashflow_lacunas", rotulos) == 0
