@@ -1,0 +1,22 @@
+# Pacote compartilhado de validação JWT das APIs (002 design TD-005; INFRA
+# 5.5, 5.6): assinatura, expiração, emissor, audiência e escopo, com cache de
+# JWKS de TTL configurável. A audiência esperada vem da configuração, para
+# servir a lancamentos-api e consolidado-api (002 design §17, DQ-003).
+[project]
+name = "seguranca"
+version = "0.1.0"
+description = "Validação JWT com cache de JWKS do CashFlow"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "observabilidade",
+    # PyJWT com o extra crypto (cryptography) para RS256; o cache de JWKS é
+    # próprio (jwks.py) para controlar TTL, falha com 503 e métricas.
+    "pyjwt[crypto]>=2.15.1",
+]
+
+[tool.uv.sources]
+observabilidade = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.9.0,<0.14"]
+build-backend = "uv_build"

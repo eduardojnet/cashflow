@@ -10,10 +10,11 @@ requires-python = ">=3.12,<3.13"
 package = false
 
 [tool.uv.workspace]
-members = ["packages/observabilidade"]
+members = ["packages/observabilidade", "packages/seguranca"]
 
 [tool.uv.sources]
 observabilidade = { workspace = true }
+seguranca = { workspace = true }
 
 # Os serviços são pacotes Python com raiz em `services/` (por exemplo,
 # `lancamentos.dominio`), mantendo os caminhos de cada tasks.md sem
@@ -28,6 +29,7 @@ dev = [
     # Membro do workspace instalado no ambiente da raiz para que
     # `uv run pytest packages/observabilidade` rode a partir da raiz.
     "observabilidade",
+    "seguranca",
     {include-group = "migracoes"},
 ]
 # Migrações Alembic dos bancos (ST-Q-005). Grupo próprio para que a imagem de
