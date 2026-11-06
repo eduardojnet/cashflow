@@ -14,12 +14,20 @@ services:
     environment:
       POSTGRES_DB: livro
       POSTGRES_PASSWORD: ${PG_LIVRO_SENHA_SUPERUSUARIO:?defina PG_LIVRO_SENHA_SUPERUSUARIO em infra/.env}
+      # Senhas dos papéis do livro, lidas por postgres/livro/10-papeis.sh
+      # (001-T6; design 001 §4, TD-003).
+      PG_LIVRO_SENHA_MIGRACAO: ${PG_LIVRO_SENHA_MIGRACAO:?defina PG_LIVRO_SENHA_MIGRACAO em infra/.env}
+      PG_LIVRO_SENHA_API: ${PG_LIVRO_SENHA_API:?defina PG_LIVRO_SENHA_API em infra/.env}
+      PG_LIVRO_SENHA_RELAY: ${PG_LIVRO_SENHA_RELAY:?defina PG_LIVRO_SENHA_RELAY em infra/.env}
+      PG_LIVRO_SENHA_REPLAY: ${PG_LIVRO_SENHA_REPLAY:?defina PG_LIVRO_SENHA_REPLAY em infra/.env}
     networks:
       - rede-livro
     volumes:
       # A partir do PostgreSQL 18 a imagem guarda os dados em
       # /var/lib/postgresql/18/docker; o volume monta o diretório pai.
       - vol-pg-livro:/var/lib/postgresql
+      # Papéis e privilégios, aplicados só na criação do volume (001-T6).
+      - ./postgres/livro:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d livro"]
       interval: 5s
@@ -34,10 +42,18 @@ services:
     environment:
       POSTGRES_DB: consolidado
       POSTGRES_PASSWORD: ${PG_CONSOLIDADO_SENHA_SUPERUSUARIO:?defina PG_CONSOLIDADO_SENHA_SUPERUSUARIO em infra/.env}
+      # Senhas dos papéis do consolidado, lidas por
+      # postgres/consolidado/10-papeis.sh (001-T6; design 001 §4, TD-003).
+      PG_CONSOLIDADO_SENHA_MIGRACAO: ${PG_CONSOLIDADO_SENHA_MIGRACAO:?defina PG_CONSOLIDADO_SENHA_MIGRACAO em infra/.env}
+      PG_CONSOLIDADO_SENHA_WORKER: ${PG_CONSOLIDADO_SENHA_WORKER:?defina PG_CONSOLIDADO_SENHA_WORKER em infra/.env}
+      PG_CONSOLIDADO_SENHA_API: ${PG_CONSOLIDADO_SENHA_API:?defina PG_CONSOLIDADO_SENHA_API em infra/.env}
+      PG_CONSOLIDADO_SENHA_OPERACAO: ${PG_CONSOLIDADO_SENHA_OPERACAO:?defina PG_CONSOLIDADO_SENHA_OPERACAO em infra/.env}
     networks:
       - rede-consolidado
     volumes:
       - vol-pg-consolidado:/var/lib/postgresql
+      # Papéis e privilégios, aplicados só na criação do volume (001-T6).
+      - ./postgres/consolidado:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d consolidado"]
       interval: 5s
