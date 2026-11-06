@@ -162,7 +162,7 @@ def test_migracao_fica_em_head_aplicada_por_livro_migracao() -> None:
     )
 
     assert resultado.returncode == 0, resultado.stderr
-    assert resultado.stdout.strip() == "0002"
+    assert resultado.stdout.strip() == "0003"
 
 
 def test_tabelas_do_livro_pertencem_a_livro_migracao() -> None:
@@ -276,12 +276,13 @@ def test_livro_api_nao_tem_privilegio_alem_do_registro(
     ("papel", "tabela"),
     [
         *(("livro_relay", tabela) for tabela in TABELAS if tabela != "outbox"),
-        *(("livro_replay", tabela) for tabela in TABELAS),
+        *(("livro_replay", tabela) for tabela in TABELAS if tabela != "outbox"),
     ],
 )
 def test_outros_papeis_ainda_nao_acessam_as_tabelas(papel: str, tabela: str) -> None:
     # Privilégios concedidos pelas migrações das specs 003 e 005; livro_relay
-    # lê a outbox desde a 0002 (003-T1).
+    # lê a outbox desde a 0002 (003-T1) e livro_replay lê `posicao` da outbox
+    # desde a 0003 (003-T4).
     resultado = _psql(papel, f"SELECT 1 FROM {tabela} LIMIT 1")
 
     assert resultado.returncode != 0
