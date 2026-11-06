@@ -11,3 +11,9 @@ package = false
 
 [tool.uv.workspace]
 members = []
+
+[dependency-groups]
+dev = [
+    "aio-pika>=10.2.2",
+    "pytest>=9.2.0",
+]

@@ -40,6 +40,35 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  rabbitmq:
+    # Versão: RabbitMQ 4.4.0, última GA em
+    # https://www.rabbitmq.com/release-information (lançada em 2026-10-20);
+    # tag em https://hub.docker.com/_/rabbitmq. Conferido em 2026-11-06
+    # (TD-007). A variante management atende TD-006.
+    image: rabbitmq:4.4.0-management-alpine
+    # O nome do nó (rabbit@<hostname>) define o diretório de dados no volume;
+    # hostname fixo mantém os dados ao recriar o contêiner (FR-010).
+    hostname: rabbitmq
+    entrypoint: ["/etc/rabbitmq/cashflow/entrypoint.sh"]
+    command: ["rabbitmq-server"]
+    environment:
+      RABBITMQ_SENHA_RELAY: ${RABBITMQ_SENHA_RELAY:?defina RABBITMQ_SENHA_RELAY em infra/.env}
+      RABBITMQ_SENHA_WORKER: ${RABBITMQ_SENHA_WORKER:?defina RABBITMQ_SENHA_WORKER em infra/.env}
+    volumes:
+      - vol-rabbitmq:/var/lib/rabbitmq
+      - ./rabbitmq/entrypoint.sh:/etc/rabbitmq/cashflow/entrypoint.sh:ro
+      - ./rabbitmq/definicoes.modelo.json:/etc/rabbitmq/cashflow/definicoes.modelo.json:ro
+      - ./rabbitmq/20-cashflow.conf:/etc/rabbitmq/conf.d/20-cashflow.conf:ro
+    healthcheck:
+      # Pronto = listeners aceitando conexão, não só processo vivo (INFRA 8.5).
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
 volumes:
   vol-pg-livro:
   vol-pg-consolidado:
+  vol-rabbitmq:

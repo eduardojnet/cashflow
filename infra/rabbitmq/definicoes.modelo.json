@@ -1,0 +1,63 @@
+{
+  "vhosts": [
+    {"name": "/"}
+  ],
+  "users": [
+    {
+      "name": "relay",
+      "password": "__RABBITMQ_SENHA_RELAY__",
+      "tags": []
+    },
+    {
+      "name": "worker",
+      "password": "__RABBITMQ_SENHA_WORKER__",
+      "tags": []
+    }
+  ],
+  "permissions": [
+    {
+      "user": "relay",
+      "vhost": "/",
+      "configure": "^$",
+      "write": "^cashflow\\.lancamentos$",
+      "read": "^$"
+    },
+    {
+      "user": "worker",
+      "vhost": "/",
+      "configure": "^$",
+      "write": "^$",
+      "read": "^consolidado\\.lancamentos$"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "cashflow.lancamentos",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "consolidado.lancamentos",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {"x-queue-type": "classic"}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "cashflow.lancamentos",
+      "vhost": "/",
+      "destination": "consolidado.lancamentos",
+      "destination_type": "queue",
+      "routing_key": "lancamento.registrado.v1",
+      "arguments": {}
+    }
+  ]
+}
