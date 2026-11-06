@@ -4,9 +4,10 @@ FR-005, NFR-001; INFRA 2.1, 9.6).
 O cenário roda sobre o compose real (`infra/compose.yaml`) e injeta a falha
 com `docker compose stop` (ST-Q-010): fica no ar só o caminho do registro
 (pg-livro, Keycloak e lancamentos-api, design 002 §5); todo o resto, que hoje
-inclui RabbitMQ e pg-consolidado e, quando existirem, worker e consolidado,
-é parado. Com isso, toda requisição válida deve ser confirmada com 201 e cada
-lançamento deve deixar o seu evento pendente na outbox, à espera do relay.
+inclui RabbitMQ, pg-consolidado, relay e worker e, quando existir, a API do
+consolidado, é parado. Com isso, toda requisição válida deve ser confirmada
+com 201 e cada lançamento deve deixar o seu evento pendente na outbox, à
+espera do relay.
 
 O livro é imutável por privilégio (TD-003): lançamento gravado não sai mais.
 Por isso o teste não usa o projeto `cashflow` do ambiente, e sim um projeto
@@ -51,9 +52,9 @@ SEGREDO = "KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS"
 
 # Caminho do registro (design 002 §5): o que a API usa e fica no ar.
 CAMINHO_DO_REGISTRO = {"pg-livro", "keycloak", "lancamentos-api"}
-# Precisam estar entre os parados; worker e consolidado entram pelo
-# complemento de CAMINHO_DO_REGISTRO quando forem acrescentados ao compose.
-OBRIGATORIOS_PARADOS = {"rabbitmq", "pg-consolidado"}
+# Precisam estar entre os parados; a API do consolidado (004-T5) entra pelo
+# complemento de CAMINHO_DO_REGISTRO quando for acrescentada ao compose.
+OBRIGATORIOS_PARADOS = {"rabbitmq", "pg-consolidado", "worker"}
 
 REQUISICOES = 60
 PARALELISMO = 6
@@ -176,10 +177,14 @@ class Ambiente:
 def ambiente() -> Iterator[Ambiente]:
     ambiente = Ambiente(porta_keycloak=_porta_livre(), porta_api=_porta_livre())
     try:
-        # Banco primeiro, migração do livro com livro_migracao (002-T2) e só
-        # então o restante, aguardando todos os health checks.
-        ambiente.exigir("up", "-d", "--wait", "pg-livro", timeout=300)
+        # Bancos primeiro, migrações do livro (002-T2) e do consolidado
+        # (004-T1), e só então o restante, aguardando todos os health checks,
+        # inclusive o do worker (004-T3), que exige o esquema do consolidado.
+        ambiente.exigir(
+            "up", "-d", "--wait", "pg-livro", "pg-consolidado", timeout=300
+        )
         ambiente.exigir("run", "--rm", "--build", "livro-migracao", timeout=600)
+        ambiente.exigir("run", "--rm", "--build", "consolidado-migracao", timeout=600)
         ambiente.exigir("up", "-d", "--build", "--wait", timeout=900)
         yield ambiente
     finally:

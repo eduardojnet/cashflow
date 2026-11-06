@@ -232,6 +232,51 @@ services:
         condition: service_healthy
     restart: "no"
 
+  worker:
+    # Worker do consolidado (spec 004; 004-T3): consome a fila com ACK manual
+    # após o commit, deduplica por inbox e contribuição e guarda conflitos e
+    # mensagens ilegíveis na quarentena (design 004 §3). Só nas redes do
+    # consolidado e da mensageria: não alcança pg-livro (INFRA 6.7). Papel
+    # consolidado_worker e usuário `worker` do RabbitMQ, só de leitura da
+    # fila (INFRA 5.11). Versões das imagens base:
+    # services/consolidado/Dockerfile.
+    #
+    # Pressupõe o esquema aplicado pelo serviço consolidado-migracao; sem
+    # ele, o ready fica falso e o consumo, pausado.
+    build:
+      context: ..
+      dockerfile: services/consolidado/Dockerfile
+    environment:
+      PG_CONSOLIDADO_HOST: pg-consolidado
+      PG_CONSOLIDADO_SENHA_WORKER: ${PG_CONSOLIDADO_SENHA_WORKER:?defina PG_CONSOLIDADO_SENHA_WORKER em infra/.env}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_SENHA_WORKER: ${RABBITMQ_SENHA_WORKER:?defina RABBITMQ_SENHA_WORKER em infra/.env}
+      # Mensagens não confirmadas por canal e espera entre reconexões
+      # (DQ-003). Os testes de falha encurtam a espera pelo ambiente do host.
+      WORKER_PREFETCH: ${WORKER_PREFETCH:-10}
+      WORKER_INTERVALO_RECONEXAO_SEGUNDOS: ${WORKER_INTERVALO_RECONEXAO_SEGUNDOS:-2}
+      # Health e /metrics em portas internas, sem publicação no host (INFRA
+      # 6.1; 007 design §4).
+      HEALTH_PORTA: "8080"
+      METRICAS_PORTA: "9464"
+    networks:
+      - rede-consolidado
+      - rede-mensageria
+    depends_on:
+      pg-consolidado:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      # Pronto = /health/ready com 200: controle da projeção legível como
+      # consolidado_worker e RabbitMQ conectado (INFRA 8.5).
+      test: ["CMD", "python", "-m", "consolidado.worker.sonda"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
   rabbitmq:
     # Versão: RabbitMQ 4.4.0, última GA em
     # https://www.rabbitmq.com/release-information (lançada em 2026-10-20);

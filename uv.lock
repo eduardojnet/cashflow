@@ -86,6 +86,12 @@ version = "0.1.0"
 source = { virtual = "." }
 
 [package.dev-dependencies]
+consolidado = [
+    { name = "aio-pika" },
+    { name = "observabilidade" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "psycopg-pool" },
+]
 dev = [
     { name = "aio-pika" },
     { name = "alembic" },
@@ -120,6 +126,12 @@ relay = [
 [package.metadata]
 
 [package.metadata.requires-dev]
+consolidado = [
+    { name = "aio-pika", specifier = ">=10.2.2" },
+    { name = "observabilidade", editable = "packages/observabilidade" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" },
+    { name = "psycopg-pool", specifier = ">=3.3.3" },
+]
 dev = [
     { name = "aio-pika", specifier = ">=10.2.2" },
     { name = "alembic", specifier = ">=1.20.1" },

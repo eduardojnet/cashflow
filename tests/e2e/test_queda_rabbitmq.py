@@ -17,7 +17,9 @@ com o próprio Docker (ST-Q-010):
 
 A fila é conferida pelo `message_id` de cada mensagem, consumida com o
 usuário `worker` num contêiner avulso da imagem do relay na rede da
-mensageria: o RabbitMQ não é publicado no host (INFRA 6.3).
+mensageria: o RabbitMQ não é publicado no host (INFRA 6.3). O serviço
+`worker` do consolidado (004-T3) não sobe neste projeto, para não consumir
+as mensagens conferidas.
 
 Como em test_independencia_lancamentos.py, o teste usa um projeto compose
 próprio (`cashflow-e2e-rabbitmq`), com volumes próprios, portas efêmeras em
@@ -65,6 +67,16 @@ AMBIENTE_RELAY = {
     "RELAY_ESPERA_BASE_SEGUNDOS": "0.5",
     "RELAY_ESPERA_TETO_SEGUNDOS": "2",
 }
+
+# Tudo menos o worker do consolidado, que esvaziaria a fila conferida aqui.
+SERVICOS = [
+    "pg-livro",
+    "pg-consolidado",
+    "rabbitmq",
+    "keycloak",
+    "lancamentos-api",
+    "relay",
+]
 
 LANCAMENTOS_NA_QUEDA = 20
 LANCAMENTOS_ANTES_DA_PERDA = 10
@@ -310,10 +322,11 @@ def ambiente() -> Iterator[Ambiente]:
     try:
         # Banco primeiro, migração do livro com livro_migracao (002-T2) e só
         # então o restante, aguardando todos os health checks, inclusive o
-        # do relay.
+        # do relay. Sem o worker (004-T3): ele consumiria da fila as
+        # mensagens que o teste confere.
         ambiente.exigir("up", "-d", "--wait", "pg-livro", timeout=300)
         ambiente.exigir("run", "--rm", "--build", "livro-migracao", timeout=600)
-        ambiente.exigir("up", "-d", "--build", "--wait", timeout=900)
+        ambiente.exigir("up", "-d", "--build", "--wait", *SERVICOS, timeout=900)
         yield ambiente
     finally:
         ambiente.compose(

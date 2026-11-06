@@ -1,0 +1,15 @@
+# Contexto mínimo da imagem do consolidado: tudo fora, exceto o que o
+# Dockerfile copia. Mantém infra/.env, chaves, testes, migrações e a .venv
+# fora do build (INFRA 5.9).
+*
+!pyproject.toml
+!uv.lock
+!packages/observabilidade/pyproject.toml
+!packages/observabilidade/src
+!packages/seguranca/pyproject.toml
+!services/consolidado/__init__.py
+!services/consolidado/dominio
+!services/consolidado/aplicacao
+!services/consolidado/adaptadores
+!services/consolidado/worker
+**/__pycache__
