@@ -30,7 +30,22 @@ dev = [
     # `uv run pytest packages/observabilidade` rode a partir da raiz.
     "observabilidade",
     "seguranca",
+    # Cliente do TestClient do FastAPI nos testes da API (002-T5).
+    "httpx2>=2.16.0",
     {include-group = "migracoes"},
+    {include-group = "lancamentos"},
+]
+# API de lançamentos (002-T5): FastAPI e uvicorn (ST-Q-002), psycopg 3 com
+# pool assíncrono (ST-Q-003) e os pacotes internos de JWT e métricas. Grupo
+# próprio para que a imagem da API instale só isto
+# (`uv sync --only-group lancamentos`).
+lancamentos = [
+    "fastapi>=0.162.0",
+    "observabilidade",
+    "psycopg-pool>=3.3.3",
+    "psycopg[binary]>=3.3.8",
+    "seguranca",
+    "uvicorn>=0.54.0",
 ]
 # Migrações Alembic dos bancos (ST-Q-005). Grupo próprio para que a imagem de
 # migração instale só isto (`uv sync --only-group migracoes`); o grupo dev o

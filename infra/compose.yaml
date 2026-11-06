@@ -57,6 +57,60 @@ services:
         condition: service_healthy
     restart: "no"
 
+  lancamentos-api:
+    # API de lançamentos (spec 002; 002-T5). HTTPS com o certificado da AC
+    # local (INFRA 5.7, 5.8); JWT validado na própria API com cache de JWKS
+    # (INFRA 5.5, 5.6). Não fala com RabbitMQ nem com o consolidado (INFRA
+    # 2.1). Versões das imagens base: services/lancamentos/Dockerfile.
+    #
+    # Pressupõe o esquema aplicado pelo serviço livro-migracao; sem ele, o
+    # ready fica falso.
+    build:
+      context: ..
+      dockerfile: services/lancamentos/Dockerfile
+    environment:
+      PG_LIVRO_HOST: pg-livro
+      PG_LIVRO_SENHA_API: ${PG_LIVRO_SENHA_API:?defina PG_LIVRO_SENHA_API em infra/.env}
+      # Emissor (`iss`) igual a KC_HOSTNAME do Keycloak; o JWKS é lido pelo
+      # nome interno, que consta do certificado do Keycloak (001-T3).
+      JWT_EMISSOR: https://localhost:${KEYCLOAK_PORTA_HOST:-8443}/realms/cashflow
+      JWT_JWKS_URL: https://keycloak:8443/realms/cashflow/protocol/openid-connect/certs
+      JWT_AC_ARQUIVO: /etc/cashflow/tls/ac-cashflow.crt
+      JWT_JWKS_TTL_SEGUNDOS: "300"
+      TLS_CERTIFICADO: /etc/cashflow/tls/lancamentos-api.crt
+      TLS_CHAVE: /etc/cashflow/tls/lancamentos-api.key
+      API_PORTA: "8443"
+      # /metrics em porta interna, sem publicação no host (007 design §4).
+      METRICAS_PORTA: "9464"
+    # Só a porta TLS, só em loopback (INFRA 6.5, 6.6).
+    # LANCAMENTOS_API_PORTA_HOST troca a porta do host se 8444 estiver ocupada.
+    ports:
+      - "127.0.0.1:${LANCAMENTOS_API_PORTA_HOST:-8444}:8443"
+    # Banco do livro e JWKS do Keycloak (design 001 §3).
+    networks:
+      - rede-livro
+      - rede-identidade
+    volumes:
+      # Gerados por infra/tls/gerar-certificados.sh (001-T3). A chave tem modo
+      # 0640 e pertence ao usuário que gerou; o contêiner roda com UID 1000.
+      - ./tls/gerados/ac/ac-cashflow.crt:/etc/cashflow/tls/ac-cashflow.crt:ro
+      - ./tls/gerados/lancamentos-api.crt:/etc/cashflow/tls/lancamentos-api.crt:ro
+      - ./tls/gerados/lancamentos-api.key:/etc/cashflow/tls/lancamentos-api.key:ro
+    depends_on:
+      pg-livro:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    healthcheck:
+      # Pronto = /health/ready com 200 por TLS: banco do livro e JWKS
+      # (INFRA 8.5).
+      test: ["CMD", "python", "-m", "lancamentos.adaptadores.http.sonda"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 15s
+    restart: unless-stopped
+
   pg-consolidado:
     # Mesma versão e fonte de pg-livro (TD-007, 2026-11-06).
     image: postgres:18.6-alpine3.24

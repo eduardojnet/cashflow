@@ -18,20 +18,13 @@ Sem docker no PATH, o módulo é pulado com o motivo explícito.
 """
 
 import asyncio
-import os
-import re
-import secrets
 import shutil
-import subprocess
-import sys
-import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -46,13 +39,8 @@ from lancamentos.aplicacao import (
     RegistrarLancamentoCmd,
     RespostaRegistro,
 )
-from psycopg.conninfo import make_conninfo
+from livro_descartavel import Livro, livro_descartavel
 
-RAIZ = Path(__file__).resolve().parents[4]
-COMPOSE = RAIZ / "infra/compose.yaml"
-PAPEIS = RAIZ / "infra/postgres/livro"
-ALEMBIC_INI = RAIZ / "services/lancamentos/migracoes/alembic.ini"
-BANCO = "livro"
 CONCORRENTES = 100
 
 # A espera do contador serializa os registros; 100 conexões simultâneas
@@ -64,142 +52,10 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@dataclass(frozen=True)
-class Livro:
-    porta: int
-    senhas: dict[str, str]
-
-    def conninfo(self, papel: str) -> str:
-        return make_conninfo(
-            host="127.0.0.1",
-            port=self.porta,
-            dbname=BANCO,
-            user=papel,
-            password=self.senhas[papel],
-        )
-
-
-def _docker(
-    *args: str, env: dict[str, str] | None = None, timeout: int = 60
-) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["docker", *args],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env=env,
-    )
-
-
-def _imagem_do_compose() -> str:
-    # A mesma imagem fixada para pg-livro (001 TD-007), sem segunda cópia.
-    encontrada = re.search(r"image:\s*(postgres:\S+)", COMPOSE.read_text())
-    assert encontrada, "imagem do PostgreSQL não encontrada em infra/compose.yaml"
-    return encontrada.group(1)
-
-
-def _aguardar_pronto(id_: str, livro: Livro) -> None:
-    # Durante a criação do volume o entrypoint sobe um servidor temporário só
-    # no soquete local; pronto é aceitar conexão TCP como livro_migracao.
-    limite = time.monotonic() + 90
-    while time.monotonic() < limite:
-        pronto = _docker(
-            "exec", id_, "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", BANCO
-        )
-        if pronto.returncode == 0:
-            try:
-                with psycopg.connect(
-                    livro.conninfo("livro_migracao"), connect_timeout=3
-                ):
-                    return
-            except psycopg.OperationalError:
-                pass
-        time.sleep(1)
-    logs = _docker("logs", id_).stderr[-2000:]
-    raise AssertionError(f"PostgreSQL descartável não ficou pronto:\n{logs}")
-
-
 @pytest.fixture(scope="module")
 def livro() -> Iterator[Livro]:
-    senhas = {
-        papel: secrets.token_hex(24)
-        for papel in [
-            "postgres",
-            "livro_migracao",
-            "livro_api",
-            "livro_relay",
-            "livro_replay",
-        ]
-    }
-    # As senhas chegam ao docker por variável de ambiente, não pela linha de
-    # comando, como em infra/postgres/livro/10-papeis.sh.
-    env = {
-        **os.environ,
-        "POSTGRES_PASSWORD": senhas["postgres"],
-        "PG_LIVRO_SENHA_MIGRACAO": senhas["livro_migracao"],
-        "PG_LIVRO_SENHA_API": senhas["livro_api"],
-        "PG_LIVRO_SENHA_RELAY": senhas["livro_relay"],
-        "PG_LIVRO_SENHA_REPLAY": senhas["livro_replay"],
-    }
-    criado = _docker(
-        "run",
-        "-d",
-        "--label",
-        "cashflow.teste=unidade-de-trabalho-livro",
-        "-p",
-        "127.0.0.1::5432",
-        "-e",
-        f"POSTGRES_DB={BANCO}",
-        "-e",
-        "POSTGRES_PASSWORD",
-        "-e",
-        "PG_LIVRO_SENHA_MIGRACAO",
-        "-e",
-        "PG_LIVRO_SENHA_API",
-        "-e",
-        "PG_LIVRO_SENHA_RELAY",
-        "-e",
-        "PG_LIVRO_SENHA_REPLAY",
-        "-v",
-        f"{PAPEIS}:/docker-entrypoint-initdb.d:ro",
-        _imagem_do_compose(),
-        "-c",
-        f"max_connections={MAX_CONEXOES}",
-        env=env,
-        timeout=300,
-    )
-    assert criado.returncode == 0, criado.stderr
-    id_ = criado.stdout.strip()
-    try:
-        porta = _docker("port", id_, "5432/tcp").stdout.split(":")[-1].strip()
-        banco = Livro(porta=int(porta), senhas=senhas)
-        _aguardar_pronto(id_, banco)
-        migracao = subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "alembic",
-                "-c",
-                str(ALEMBIC_INI),
-                "upgrade",
-                "head",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env={
-                **os.environ,
-                "PG_LIVRO_HOST": "127.0.0.1",
-                "PG_LIVRO_PORTA": porta,
-                "PG_LIVRO_SENHA_MIGRACAO": senhas["livro_migracao"],
-            },
-        )
-        assert migracao.returncode == 0, migracao.stderr
+    with livro_descartavel("unidade-de-trabalho-livro", MAX_CONEXOES) as banco:
         yield banco
-    finally:
-        _docker("rm", "-f", "-v", id_)
 
 
 def _fabrica(livro: Livro) -> FabricaConexao:

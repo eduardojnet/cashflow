@@ -12,7 +12,8 @@ from observabilidade import (
     TipoMetrica,
 )
 
-# Mapa de métricas de 007 design §4 que saem dos componentes Python.
+# Mapa de métricas de 007 design §4 que saem dos componentes Python,
+# incluindo a emenda TD-005 (requisições HTTP por status).
 NOMES_DO_MAPA = {
     "cashflow_outbox_pendentes",
     "cashflow_outbox_idade_mais_antigo_segundos",
@@ -25,6 +26,7 @@ NOMES_DO_MAPA = {
     "cashflow_lacunas",
     "cashflow_jwt_falhas_total",
     "cashflow_jwks_falhas_total",
+    "cashflow_http_requisicoes_total",
 }
 
 
@@ -38,6 +40,10 @@ def test_rotulos_do_catalogo_seguem_o_design() -> None:
     assert CATALOGO["cashflow_checkpoint_posicao"].rotulos == ("geracao",)
     assert CATALOGO["cashflow_lacunas"].rotulos == ("geracao",)
     assert CATALOGO["cashflow_jwt_falhas_total"].rotulos == ("motivo",)
+    assert CATALOGO["cashflow_http_requisicoes_total"].rotulos == (
+        "componente",
+        "status",
+    )
 
 
 @pytest.mark.parametrize(

@@ -52,6 +52,7 @@ ROTULOS_PERMITIDOS: dict[str, frozenset[str]] = {
     "cashflow_lacunas": frozenset({"geracao"}),
     "cashflow_jwt_falhas_total": frozenset({"motivo"}),
     "cashflow_jwks_falhas_total": frozenset(),
+    "cashflow_http_requisicoes_total": frozenset({"componente", "status"}),
 }
 
 # Defesa adicional: nenhum rótulo pode sugerir dado sensível, mesmo que
@@ -137,6 +138,13 @@ CATALOGO: dict[str, DefinicaoMetrica] = {
             "cashflow_jwks_falhas_total",
             TipoMetrica.CONTADOR,
             "Falhas de obtenção ou renovação do JWKS",
+        ),
+        # Fora de INFRA 8.3 (007 TD-005): `status` é o código HTTP numérico.
+        DefinicaoMetrica(
+            "cashflow_http_requisicoes_total",
+            TipoMetrica.CONTADOR,
+            "Respostas HTTP das APIs por componente e status",
+            ("componente", "status"),
         ),
     )
 }

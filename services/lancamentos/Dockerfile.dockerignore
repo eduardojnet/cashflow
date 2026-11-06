@@ -1,0 +1,15 @@
+# Contexto mínimo da imagem da API de lançamentos: tudo fora, exceto o que o
+# Dockerfile copia. Mantém infra/.env, chaves, testes e a .venv fora do build
+# (INFRA 5.9).
+*
+!pyproject.toml
+!uv.lock
+!packages/observabilidade/pyproject.toml
+!packages/observabilidade/src
+!packages/seguranca/pyproject.toml
+!packages/seguranca/src
+!services/lancamentos/__init__.py
+!services/lancamentos/dominio
+!services/lancamentos/aplicacao
+!services/lancamentos/adaptadores
+**/__pycache__
