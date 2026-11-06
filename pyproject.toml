@@ -15,6 +15,12 @@ members = ["packages/observabilidade"]
 [tool.uv.sources]
 observabilidade = { workspace = true }
 
+# Os serviços são pacotes Python com raiz em `services/` (por exemplo,
+# `lancamentos.dominio`), mantendo os caminhos de cada tasks.md sem
+# colisão de nomes entre serviços (`dominio`, `aplicacao`...).
+[tool.pytest.ini_options]
+pythonpath = ["services"]
+
 [dependency-groups]
 dev = [
     "aio-pika>=10.2.2",
