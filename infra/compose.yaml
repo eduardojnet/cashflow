@@ -1,8 +1,9 @@
 # Ambiente local do CashFlow (001, TD-001: um único Compose).
 # Segredos: interpolados de infra/.env, ignorado pelo Git (INFRA 5.9, 5.10).
-# Bancos e RabbitMQ sem `ports`, só em redes internas: inacessíveis a partir
-# do host (INFRA 6.1 a 6.3). Somente APIs e Keycloak são publicados, e apenas
-# em 127.0.0.1 (FR-007, INFRA 6.5, 6.6). Redes por fronteira: TD-002.
+# Bancos, RabbitMQ, Prometheus e exporters sem `ports`, só em redes internas:
+# inacessíveis a partir do host (INFRA 6.1 a 6.3). Somente APIs, Keycloak e
+# Grafana são publicados, e apenas em 127.0.0.1 (FR-007, INFRA 6.5, 6.6).
+# Redes por fronteira: TD-002; observabilidade: 007 design §3, TD-007.
 name: cashflow
 
 services:
@@ -20,6 +21,7 @@ services:
       PG_LIVRO_SENHA_API: ${PG_LIVRO_SENHA_API:?defina PG_LIVRO_SENHA_API em infra/.env}
       PG_LIVRO_SENHA_RELAY: ${PG_LIVRO_SENHA_RELAY:?defina PG_LIVRO_SENHA_RELAY em infra/.env}
       PG_LIVRO_SENHA_REPLAY: ${PG_LIVRO_SENHA_REPLAY:?defina PG_LIVRO_SENHA_REPLAY em infra/.env}
+      PG_LIVRO_SENHA_MONITORAMENTO: ${PG_LIVRO_SENHA_MONITORAMENTO:?defina PG_LIVRO_SENHA_MONITORAMENTO em infra/.env}
     networks:
       - rede-livro
     volumes:
@@ -80,16 +82,22 @@ services:
       TLS_CERTIFICADO: /etc/cashflow/tls/lancamentos-api.crt
       TLS_CHAVE: /etc/cashflow/tls/lancamentos-api.key
       API_PORTA: "8443"
-      # /metrics em porta interna, sem publicação no host (007 design §4).
+      # /metrics em porta interna, sem publicação no host (007 design §4),
+      # escutando só no alias da rede do livro: a rede de identidade não é
+      # interna e o host a alcança (007 TD-007; INFRA 6.1).
       METRICAS_PORTA: "9464"
+      METRICAS_ENDERECO: lancamentos-api-metricas
     # Só a porta TLS, só em loopback (INFRA 6.5, 6.6).
     # LANCAMENTOS_API_PORTA_HOST troca a porta do host se 8444 estiver ocupada.
     ports:
       - "127.0.0.1:${LANCAMENTOS_API_PORTA_HOST:-8444}:8443"
-    # Banco do livro e JWKS do Keycloak (design 001 §3).
+    # Banco do livro e JWKS do Keycloak (design 001 §3). O alias existe só na
+    # rede do livro, onde o Prometheus coleta o /metrics (007 TD-007).
     networks:
-      - rede-livro
-      - rede-identidade
+      rede-livro:
+        aliases:
+          - lancamentos-api-metricas
+      rede-identidade: {}
     volumes:
       # Gerados por infra/tls/gerar-certificados.sh (001-T3). A chave tem modo
       # 0640 e pertence ao usuário que gerou; o contêiner roda com UID 1000.
@@ -195,6 +203,7 @@ services:
       PG_CONSOLIDADO_SENHA_WORKER: ${PG_CONSOLIDADO_SENHA_WORKER:?defina PG_CONSOLIDADO_SENHA_WORKER em infra/.env}
       PG_CONSOLIDADO_SENHA_API: ${PG_CONSOLIDADO_SENHA_API:?defina PG_CONSOLIDADO_SENHA_API em infra/.env}
       PG_CONSOLIDADO_SENHA_OPERACAO: ${PG_CONSOLIDADO_SENHA_OPERACAO:?defina PG_CONSOLIDADO_SENHA_OPERACAO em infra/.env}
+      PG_CONSOLIDADO_SENHA_MONITORAMENTO: ${PG_CONSOLIDADO_SENHA_MONITORAMENTO:?defina PG_CONSOLIDADO_SENHA_MONITORAMENTO em infra/.env}
     networks:
       - rede-consolidado
     volumes:
@@ -311,16 +320,23 @@ services:
       # Dias por página do intervalo: padrão e máximo (TD-008).
       SALDOS_LIMITE_PADRAO: ${SALDOS_LIMITE_PADRAO:-50}
       SALDOS_LIMITE_MAXIMO: ${SALDOS_LIMITE_MAXIMO:-500}
-      # /metrics em porta interna, sem publicação no host (007 design §4).
+      # /metrics em porta interna, sem publicação no host (007 design §4),
+      # escutando só no alias da rede do consolidado: a rede de identidade
+      # não é interna e o host a alcança (007 TD-007; INFRA 6.1).
       METRICAS_PORTA: "9464"
+      METRICAS_ENDERECO: consolidado-api-metricas
     # Só a porta TLS, só em loopback (INFRA 6.5, 6.6).
     # CONSOLIDADO_API_PORTA_HOST troca a porta do host se 8445 estiver ocupada.
     ports:
       - "127.0.0.1:${CONSOLIDADO_API_PORTA_HOST:-8445}:8443"
-    # Banco do consolidado e JWKS do Keycloak (design 001 §3).
+    # Banco do consolidado e JWKS do Keycloak (design 001 §3). O alias existe
+    # só na rede do consolidado, onde o Prometheus coleta o /metrics (007
+    # TD-007).
     networks:
-      - rede-consolidado
-      - rede-identidade
+      rede-consolidado:
+        aliases:
+          - consolidado-api-metricas
+      rede-identidade: {}
     volumes:
       # Gerados por infra/tls/gerar-certificados.sh (001-T3).
       - ./tls/gerados/ac/ac-cashflow.crt:/etc/cashflow/tls/ac-cashflow.crt:ro
@@ -345,7 +361,9 @@ services:
     # Versão: RabbitMQ 4.4.0, última GA em
     # https://www.rabbitmq.com/release-information (lançada em 2026-10-20);
     # tag em https://hub.docker.com/_/rabbitmq. Conferido em 2026-11-06
-    # (TD-007). A variante management atende TD-006.
+    # (TD-007). A variante management atende TD-006. O plugin Prometheus
+    # expõe as métricas na porta 15692, só na rede da mensageria (007 design
+    # §3).
     image: rabbitmq:4.4.0-management-alpine
     # O nome do nó (rabbit@<hostname>) define o diretório de dados no volume;
     # hostname fixo mantém os dados ao recriar o contêiner (FR-010).
@@ -362,6 +380,9 @@ services:
       - ./rabbitmq/entrypoint.sh:/etc/rabbitmq/cashflow/entrypoint.sh:ro
       - ./rabbitmq/definicoes.modelo.json:/etc/rabbitmq/cashflow/definicoes.modelo.json:ro
       - ./rabbitmq/20-cashflow.conf:/etc/rabbitmq/conf.d/20-cashflow.conf:ro
+      # Plugins habilitados declarados no repositório, sem depender do padrão
+      # da imagem (007-T1).
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
     healthcheck:
       # Pronto = listeners aceitando conexão, não só processo vivo (INFRA 8.5).
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
@@ -439,6 +460,141 @@ services:
       start_period: 60s
     restart: unless-stopped
 
+  postgres-exporter-livro:
+    # Métricas do pg-livro, inclusive o tamanho do banco (spec 007; 007-T1;
+    # design 007 §3). Papel livro_monitoramento, só com pg_monitor (INFRA
+    # 5.11). Só na rede do livro (INFRA 6.7).
+    #
+    # Versão: postgres_exporter 0.20.1, última release estável em
+    # https://github.com/prometheus-community/postgres_exporter/releases
+    # (lançada em 2026-07-08); tag em
+    # https://quay.io/repository/prometheuscommunity/postgres-exporter.
+    # Conferido em 2026-11-06 (001 TD-007).
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_URI: pg-livro:5432/livro?sslmode=disable
+      DATA_SOURCE_USER: livro_monitoramento
+      DATA_SOURCE_PASS: ${PG_LIVRO_SENHA_MONITORAMENTO:?defina PG_LIVRO_SENHA_MONITORAMENTO em infra/.env}
+    networks:
+      - rede-livro
+    depends_on:
+      pg-livro:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres-exporter-consolidado:
+    # Métricas do pg-consolidado (007-T1). Papel consolidado_monitoramento, só
+    # com pg_monitor (INFRA 5.11). Só na rede do consolidado (INFRA 6.7).
+    # Mesma versão e fonte de postgres-exporter-livro.
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_URI: pg-consolidado:5432/consolidado?sslmode=disable
+      DATA_SOURCE_USER: consolidado_monitoramento
+      DATA_SOURCE_PASS: ${PG_CONSOLIDADO_SENHA_MONITORAMENTO:?defina PG_CONSOLIDADO_SENHA_MONITORAMENTO em infra/.env}
+    networks:
+      - rede-consolidado
+    depends_on:
+      pg-consolidado:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    # Coleta das métricas de INFRA 8.3 (spec 007; 007-T1; ST-Q-008). Só lê:
+    # coleta o /metrics de cada componente nas redes internas, todas sem rota
+    # a partir do host, e não publica porta (007 design §3, TD-007; INFRA
+    # 6.1). Alvos em observabilidade/prometheus.yml.
+    #
+    # Versão: Prometheus 3.16.0, última release estável em
+    # https://github.com/prometheus/prometheus/releases (lançada em
+    # 2026-11-05); tag em https://hub.docker.com/r/prom/prometheus.
+    # Conferido em 2026-11-06 (001 TD-007).
+    image: prom/prometheus:v3.16.0
+    networks:
+      - rede-livro
+      - rede-consolidado
+      - rede-mensageria
+      - rede-observabilidade
+    volumes:
+      - vol-prometheus:/prometheus
+      - ./observabilidade/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      # Pronto = /-/ready com 200: configuração carregada e TSDB aberto
+      # (007 FR-005; INFRA 8.5).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped
+
+  grafana:
+    # Visualização das métricas (spec 007; 007-T1; ST-Q-008). HTTPS com o
+    # certificado da AC local, publicado só em loopback (INFRA 5.7, 6.5, 6.6).
+    # Lê o Prometheus pela rede da observabilidade; a segunda rede existe só
+    # para a publicação (007 TD-007). Fonte de dados e painéis: 007-T3.
+    #
+    # Versão: Grafana OSS 13.3.0, última release estável em
+    # https://github.com/grafana/grafana/releases (lançada em 2026-10-27);
+    # tag em https://hub.docker.com/r/grafana/grafana. Conferido em
+    # 2026-11-06 (001 TD-007).
+    image: grafana/grafana:13.3.0
+    # UID e GID 1000: a chave TLS montada do host tem modo 0640 e pertence a
+    # quem a gerou (infra/tls/gerar-certificados.sh), como em consolidado-api.
+    # O diretório de dados da imagem aceita qualquer UID.
+    user: "1000:1000"
+    environment:
+      GF_SERVER_PROTOCOL: https
+      GF_SERVER_HTTP_PORT: "3000"
+      GF_SERVER_CERT_FILE: /etc/grafana/tls/grafana.crt
+      GF_SERVER_CERT_KEY: /etc/grafana/tls/grafana.key
+      GF_SERVER_ROOT_URL: https://localhost:${GRAFANA_PORTA_HOST:-8446}/
+      # Administrador local; a senha vale só na criação do banco do Grafana
+      # no volume (INFRA 5.9). Sem cadastro aberto nem acesso anônimo.
+      GF_SECURITY_ADMIN_USER: admin-cashflow
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_SENHA_ADMIN:?defina GRAFANA_SENHA_ADMIN em infra/.env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      # Nada sai para a internet: sem telemetria, sem busca de atualizações
+      # e sem instalação de plugins na subida.
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    # Só a porta TLS, só em loopback (INFRA 6.5, 6.6).
+    # GRAFANA_PORTA_HOST troca a porta do host se 8446 estiver ocupada.
+    ports:
+      - "127.0.0.1:${GRAFANA_PORTA_HOST:-8446}:3000"
+    networks:
+      - rede-observabilidade
+      - rede-publicacao-grafana
+    volumes:
+      - vol-grafana:/var/lib/grafana
+      # Gerados por infra/tls/gerar-certificados.sh (001-T3).
+      - ./tls/gerados/ac/ac-cashflow.crt:/etc/grafana/tls/ac-cashflow.crt:ro
+      - ./tls/gerados/grafana.crt:/etc/grafana/tls/grafana.crt:ro
+      - ./tls/gerados/grafana.key:/etc/grafana/tls/grafana.key:ro
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      # Pronto = /api/health com 200 por TLS: banco interno do Grafana
+      # acessível (007 FR-005; INFRA 8.5).
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - -o
+        - /dev/null
+        - --cacert
+        - /etc/grafana/tls/ac-cashflow.crt
+        - https://localhost:3000/api/health
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
 # Quatro redes por fronteira (design 001 §3, TD-002). Não há rede comum entre
 # o lado do consolidado (worker, consolidado-api, coordenador) e pg-livro
 # (INFRA 6.7).
@@ -451,6 +607,11 @@ services:
 # A identidade não é interna porque o Docker não publica portas de contêiner
 # ligado só a redes internas, e Keycloak e APIs precisam ser publicados em
 # loopback.
+#
+# Observabilidade (007 design §3, TD-007): rede-observabilidade, entre
+# Prometheus e Grafana, é interna e sem IPv4 na ponte do host, como as de
+# dados. rede-publicacao-grafana não é interna, pelo mesmo motivo da
+# identidade, e só tem o Grafana.
 networks:
   rede-livro:
     internal: true
@@ -465,9 +626,16 @@ networks:
     driver_opts:
       com.docker.network.bridge.inhibit_ipv4: "true"
   rede-identidade:
+  rede-observabilidade:
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.inhibit_ipv4: "true"
+  rede-publicacao-grafana:
 
 volumes:
   vol-pg-livro:
   vol-pg-consolidado:
   vol-rabbitmq:
   vol-keycloak:
+  vol-prometheus:
+  vol-grafana:

@@ -43,6 +43,8 @@ PAPEIS_LIVRO = [
     Papel("livro_api", "pg-livro", "livro", "PG_LIVRO_SENHA_API"),
     Papel("livro_relay", "pg-livro", "livro", "PG_LIVRO_SENHA_RELAY"),
     Papel("livro_replay", "pg-livro", "livro", "PG_LIVRO_SENHA_REPLAY"),
+    # Exporter de métricas (007-T1).
+    Papel("livro_monitoramento", "pg-livro", "livro", "PG_LIVRO_SENHA_MONITORAMENTO"),
 ]
 PAPEIS_CONSOLIDADO = [
     Papel(
@@ -65,6 +67,13 @@ PAPEIS_CONSOLIDADO = [
         "pg-consolidado",
         "consolidado",
         "PG_CONSOLIDADO_SENHA_OPERACAO",
+    ),
+    # Exporter de métricas (007-T1).
+    Papel(
+        "consolidado_monitoramento",
+        "pg-consolidado",
+        "consolidado",
+        "PG_CONSOLIDADO_SENHA_MONITORAMENTO",
     ),
 ]
 PAPEIS = PAPEIS_LIVRO + PAPEIS_CONSOLIDADO

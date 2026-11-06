@@ -1,0 +1,54 @@
+# Alvos de coleta do Prometheus (spec 007; 007-T1; design 007 §3, §4).
+#
+# Todos os alvos estão nas redes internas do compose; nenhum é publicado no
+# host (INFRA 6.1). O coordenador roda como CLI e não é alvo: a fase da
+# reconstrução sai pela API do consolidado (design 007 §4). Regras de alerta:
+# 007-T4.
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # As APIs escutam o /metrics só no alias da rede interna do seu lado (007
+  # TD-007).
+  - job_name: lancamentos-api
+    static_configs:
+      - targets: ["lancamentos-api-metricas:9464"]
+
+  - job_name: consolidado-api
+    static_configs:
+      - targets: ["consolidado-api-metricas:9464"]
+
+  - job_name: relay
+    static_configs:
+      - targets: ["relay:9464"]
+
+  - job_name: worker
+    static_configs:
+      - targets: ["worker:9464"]
+
+  # Plugin Prometheus do RabbitMQ: totais agregados, inclusive disco livre.
+  - job_name: rabbitmq
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  # Mesmo plugin, mensagens prontas e não confirmadas por fila.
+  - job_name: rabbitmq-filas
+    metrics_path: /metrics/detailed
+    params:
+      family: ["queue_coarse_metrics"]
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  - job_name: postgres-livro
+    static_configs:
+      - targets: ["postgres-exporter-livro:9187"]
+
+  - job_name: postgres-consolidado
+    static_configs:
+      - targets: ["postgres-exporter-consolidado:9187"]

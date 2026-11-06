@@ -13,13 +13,17 @@
 #   - só livro_migracao cria objetos (DDL) no esquema public;
 #   - livro_api, livro_relay e livro_replay só usam o esquema. Os privilégios
 #     por tabela são concedidos pelas migrações que criam as tabelas
-#     (002-T2, 003).
+#     (002-T2, 003);
+#   - livro_monitoramento, do exporter de métricas, só lê estatísticas pelo
+#     papel predefinido pg_monitor, sem acesso ao esquema nem às tabelas
+#     (007-T1; 007 design §6; INFRA 5.11).
 set -eu
 
 : "${PG_LIVRO_SENHA_MIGRACAO:?defina PG_LIVRO_SENHA_MIGRACAO em infra/.env}"
 : "${PG_LIVRO_SENHA_API:?defina PG_LIVRO_SENHA_API em infra/.env}"
 : "${PG_LIVRO_SENHA_RELAY:?defina PG_LIVRO_SENHA_RELAY em infra/.env}"
 : "${PG_LIVRO_SENHA_REPLAY:?defina PG_LIVRO_SENHA_REPLAY em infra/.env}"
+: "${PG_LIVRO_SENHA_MONITORAMENTO:?defina PG_LIVRO_SENHA_MONITORAMENTO em infra/.env}"
 
 # As senhas entram como variáveis do psql e são citadas por :'nome', sem passar
 # pela linha de comando de outro processo nem pelo log.
@@ -28,24 +32,29 @@ psql -v ON_ERROR_STOP=1 --no-psqlrc \
   -v senha_migracao="$PG_LIVRO_SENHA_MIGRACAO" \
   -v senha_api="$PG_LIVRO_SENHA_API" \
   -v senha_relay="$PG_LIVRO_SENHA_RELAY" \
-  -v senha_replay="$PG_LIVRO_SENHA_REPLAY" <<'SQL'
+  -v senha_replay="$PG_LIVRO_SENHA_REPLAY" \
+  -v senha_monitoramento="$PG_LIVRO_SENHA_MONITORAMENTO" <<'SQL'
 \set QUIET on
 BEGIN;
 
 SELECT format('CREATE ROLE %I', papel)
-FROM unnest(ARRAY['livro_migracao', 'livro_api', 'livro_relay', 'livro_replay']) AS papel
+FROM unnest(ARRAY['livro_migracao', 'livro_api', 'livro_relay', 'livro_replay', 'livro_monitoramento']) AS papel
 WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = papel)
 \gexec
 
-ALTER ROLE livro_migracao WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_migracao';
-ALTER ROLE livro_api      WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_api';
-ALTER ROLE livro_relay    WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_relay';
-ALTER ROLE livro_replay   WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_replay';
+ALTER ROLE livro_migracao      WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_migracao';
+ALTER ROLE livro_api           WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_api';
+ALTER ROLE livro_relay         WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_relay';
+ALTER ROLE livro_replay        WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_replay';
+ALTER ROLE livro_monitoramento WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD :'senha_monitoramento';
+
+-- Leitura de estatísticas e tamanho dos bancos para o exporter (007-T1).
+GRANT pg_monitor TO livro_monitoramento;
 
 -- PUBLIC recebe CONNECT e TEMP em todo banco por padrão; aqui cada papel
 -- recebe só o que é seu.
 REVOKE ALL ON DATABASE livro, postgres, template1 FROM PUBLIC;
-GRANT CONNECT ON DATABASE livro TO livro_migracao, livro_api, livro_relay, livro_replay;
+GRANT CONNECT ON DATABASE livro TO livro_migracao, livro_api, livro_relay, livro_replay, livro_monitoramento;
 
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT USAGE, CREATE ON SCHEMA public TO livro_migracao;

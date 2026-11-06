@@ -38,6 +38,7 @@ PAPEIS_DO_CONSOLIDADO = {
     "consolidado_worker": "PG_CONSOLIDADO_SENHA_WORKER",
     "consolidado_api": "PG_CONSOLIDADO_SENHA_API",
     "consolidado_operacao": "PG_CONSOLIDADO_SENHA_OPERACAO",
+    "consolidado_monitoramento": "PG_CONSOLIDADO_SENHA_MONITORAMENTO",
 }
 
 

@@ -37,6 +37,7 @@ PAPEIS_DO_LIVRO = [
     "livro_api",
     "livro_relay",
     "livro_replay",
+    "livro_monitoramento",
 ]
 
 
@@ -118,6 +119,7 @@ def livro_descartavel(rotulo: str, max_conexoes: int = 100) -> Iterator[Livro]:
         "PG_LIVRO_SENHA_API": senhas["livro_api"],
         "PG_LIVRO_SENHA_RELAY": senhas["livro_relay"],
         "PG_LIVRO_SENHA_REPLAY": senhas["livro_replay"],
+        "PG_LIVRO_SENHA_MONITORAMENTO": senhas["livro_monitoramento"],
     }
     criado = docker(
         "run",
@@ -138,6 +140,8 @@ def livro_descartavel(rotulo: str, max_conexoes: int = 100) -> Iterator[Livro]:
         "PG_LIVRO_SENHA_RELAY",
         "-e",
         "PG_LIVRO_SENHA_REPLAY",
+        "-e",
+        "PG_LIVRO_SENHA_MONITORAMENTO",
         "-v",
         f"{PAPEIS}:/docker-entrypoint-initdb.d:ro",
         _imagem_do_compose(),

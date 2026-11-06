@@ -6,7 +6,9 @@ Mesma imagem do worker, com outro comando (004-T3). TLS obrigatório com o
 certificado emitido pela AC local (INFRA 5.7, 5.8): `TLS_CERTIFICADO` e
 `TLS_CHAVE`. A API escuta em `API_PORTA` (padrão 8443) e o /metrics em
 `METRICAS_PORTA` (padrão 9464), porta interna sem publicação no host (007
-design §4; INFRA 6.1).
+design §4; INFRA 6.1). `METRICAS_ENDERECO` (padrão 0.0.0.0) restringe o
+/metrics ao endereço da API na rede interna do consolidado, porque a rede de
+identidade é alcançável pelo host (007 TD-007).
 """
 
 import logging.config
@@ -37,7 +39,10 @@ def main() -> None:
         app = criar_app_do_ambiente(metricas=metricas)
     except ValueError as erro:
         raise SystemExit(str(erro)) from None
-    metricas.iniciar_servidor(int(os.environ.get("METRICAS_PORTA", "9464")))
+    metricas.iniciar_servidor(
+        int(os.environ.get("METRICAS_PORTA", "9464")),
+        endereco=os.environ.get("METRICAS_ENDERECO", "0.0.0.0"),
+    )
     uvicorn.run(
         app,
         host="0.0.0.0",
