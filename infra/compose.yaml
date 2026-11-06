@@ -209,6 +209,29 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  consolidado-migracao:
+    # Migrações Alembic do consolidado com o papel consolidado_migracao,
+    # separadas do worker e da API (004-T1; design 004 §13; INFRA 3.3). Cria
+    # as tabelas e a geração inicial ativa. Execução única, sob demanda:
+    #
+    #   docker compose -f infra/compose.yaml run --rm --build consolidado-migracao
+    #
+    # O perfil mantém o serviço fora do `up`, como livro-migracao. Só na rede
+    # do consolidado (INFRA 6.7). Versões das imagens base:
+    # services/consolidado/migracoes/Dockerfile.
+    profiles: ["migracao"]
+    build:
+      context: ..
+      dockerfile: services/consolidado/migracoes/Dockerfile
+    environment:
+      PG_CONSOLIDADO_SENHA_MIGRACAO: ${PG_CONSOLIDADO_SENHA_MIGRACAO:?defina PG_CONSOLIDADO_SENHA_MIGRACAO em infra/.env}
+    networks:
+      - rede-consolidado
+    depends_on:
+      pg-consolidado:
+        condition: service_healthy
+    restart: "no"
+
   rabbitmq:
     # Versão: RabbitMQ 4.4.0, última GA em
     # https://www.rabbitmq.com/release-information (lançada em 2026-10-20);
