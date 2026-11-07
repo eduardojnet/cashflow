@@ -28,3 +28,10 @@ class ReconstrucaoRecusada(ErroDominio):
             + "; cancelar ou descartar antes"
         )
         self.impedimentos = impedimentos
+
+
+class SemReconstrucao(ErroDominio):
+    """Não há geração `construindo` para a operação pedida."""
+
+    def __init__(self) -> None:
+        super().__init__("nenhuma reconstrução em andamento (sem geração construindo)")

@@ -49,13 +49,15 @@ TABELAS = [
     "estado_consumidor",
     "fase_reconstrucao",
 ]
-# O que a consulta usa (design 004 §4, API); o resto é invisível à API.
+# O que a consulta usa (design 004 §4, API) e a fase da reconstrução, que a
+# API expõe como métrica (migração 0003, 005-T3); o resto é invisível à API.
 LIDAS_PELA_API = [
     "geracao",
     "controle_projecao",
     "saldo_diario",
     "marcador_inclusao",
     "checkpoint",
+    "fase_reconstrucao",
 ]
 
 ATIVA = "(SELECT geracao_ativa_id FROM controle_projecao WHERE id = 1)"
@@ -203,7 +205,7 @@ def test_migracao_fica_em_head_aplicada_por_consolidado_migracao() -> None:
     )
 
     assert resultado.returncode == 0, resultado.stderr
-    assert resultado.stdout.strip() == "0002"
+    assert resultado.stdout.strip() == "0003"
 
 
 def test_tabelas_do_consolidado_pertencem_a_consolidado_migracao() -> None:

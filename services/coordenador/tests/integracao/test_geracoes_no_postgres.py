@@ -1,7 +1,7 @@
 """Estados de geração e tabelas de controle no PostgreSQL real (005-T1; INFRA 9.1).
 
 Usa o PostgreSQL descartável do consolidado (consolidado_descartavel.py), com
-as migrações 0001 e 0002 aplicadas por consolidado_migracao, e conecta como
+as migrações 0001 a 0003 aplicadas por consolidado_migracao, e conecta como
 consolidado_operacao, o papel do coordenador (INFRA 5.11).
 
 A maior parte dos testes roda numa transação desfeita ao fim, para que cada
@@ -364,13 +364,28 @@ def test_worker_confirma_a_pausa_e_nao_controla_geracoes(banco: Consolidado) -> 
             worker.rollback()
 
 
-@pytest.mark.parametrize("tabela", ["estado_consumidor", "fase_reconstrucao"])
-def test_api_nao_le_o_controle_da_reconstrucao(banco: Consolidado, tabela: str) -> None:
+def test_api_nao_le_a_confirmacao_dos_consumidores(banco: Consolidado) -> None:
     with (
         psycopg.connect(banco.conninfo("consolidado_api")) as api,
         pytest.raises(psycopg.errors.InsufficientPrivilege),
     ):
-        api.execute(sql.SQL("SELECT 1 FROM {}").format(sql.Identifier(tabela)))
+        api.execute("SELECT 1 FROM estado_consumidor")
+
+
+@pytest.mark.parametrize(
+    "comando",
+    [
+        "INSERT INTO fase_reconstrucao (geracao_id, fase) VALUES (1, 'x')",
+        "UPDATE fase_reconstrucao SET fase = 'x'",
+        "DELETE FROM fase_reconstrucao",
+    ],
+)
+def test_api_so_le_a_fase_da_reconstrucao(banco: Consolidado, comando: str) -> None:
+    # Leitura para `cashflow_reconstrucao_fase` (migração 0003, 005-T3).
+    with psycopg.connect(banco.conninfo("consolidado_api")) as api:
+        api.execute("SELECT geracao_id, fase, atualizado_em FROM fase_reconstrucao")
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            api.execute(comando)
 
 
 @pytest.mark.parametrize("estado", [E.ATIVA, E.CONSTRUINDO, E.ANTERIOR])

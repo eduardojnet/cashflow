@@ -95,6 +95,9 @@ consolidado = [
     { name = "seguranca" },
     { name = "uvicorn" },
 ]
+coordenador = [
+    { name = "psycopg", extra = ["binary"] },
+]
 dev = [
     { name = "aio-pika" },
     { name = "alembic" },
@@ -138,6 +141,7 @@ consolidado = [
     { name = "seguranca", editable = "packages/seguranca" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
+coordenador = [{ name = "psycopg", extras = ["binary"], specifier = ">=3.3.8" }]
 dev = [
     { name = "aio-pika", specifier = ">=10.2.2" },
     { name = "alembic", specifier = ">=1.20.1" },

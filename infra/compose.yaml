@@ -241,6 +241,34 @@ services:
         condition: service_healthy
     restart: "no"
 
+  coordenador:
+    # Coordenador da projeção (spec 005; 005-T3): CLI que inicia, acompanha e
+    # cancela a reconstrução em geração candidata (design 005 §3, §4). Papel
+    # consolidado_operacao (FR-008; INFRA 5.11). Só na rede do consolidado:
+    # não alcança pg-livro (INFRA 6.7); a republicação da outbox é feita no
+    # lado do livro, pelo serviço relay-republicar. Sem porta (INFRA 6.4).
+    # Execução sob demanda, pelo operador:
+    #
+    #   docker compose -f infra/compose.yaml run --rm --build coordenador reconstruir iniciar
+    #   docker compose -f infra/compose.yaml run --rm coordenador reconstruir status
+    #   docker compose -f infra/compose.yaml run --rm coordenador reconstruir cancelar
+    #
+    # O perfil mantém o serviço fora do `up`, como livro-migracao. Versões das
+    # imagens base: services/coordenador/Dockerfile.
+    profiles: ["operacao"]
+    build:
+      context: ..
+      dockerfile: services/coordenador/Dockerfile
+    environment:
+      PG_CONSOLIDADO_HOST: pg-consolidado
+      PG_CONSOLIDADO_SENHA_OPERACAO: ${PG_CONSOLIDADO_SENHA_OPERACAO:?defina PG_CONSOLIDADO_SENHA_OPERACAO em infra/.env}
+    networks:
+      - rede-consolidado
+    depends_on:
+      pg-consolidado:
+        condition: service_healthy
+    restart: "no"
+
   worker:
     # Worker do consolidado (spec 004; 004-T3): consome a fila com ACK manual
     # após o commit, deduplica por inbox e contribuição e guarda conflitos e
@@ -320,6 +348,9 @@ services:
       # Dias por página do intervalo: padrão e máximo (TD-008).
       SALDOS_LIMITE_PADRAO: ${SALDOS_LIMITE_PADRAO:-50}
       SALDOS_LIMITE_MAXIMO: ${SALDOS_LIMITE_MAXIMO:-500}
+      # Leitura da fase gravada pelo coordenador para
+      # `cashflow_reconstrucao_fase` (005-T3; 007 design §4).
+      FASE_INTERVALO_SEGUNDOS: ${FASE_INTERVALO_SEGUNDOS:-10}
       # /metrics em porta interna, sem publicação no host (007 design §4),
       # escutando só no alias da rede do consolidado: a rede de identidade
       # não é interna e o host a alcança (007 TD-007; INFRA 6.1).

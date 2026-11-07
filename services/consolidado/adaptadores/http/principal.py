@@ -14,10 +14,13 @@ Variáveis (ver infra/compose.yaml):
 - `JWT_*`, lidas por `ConfiguracaoJwt.de_ambiente`;
 - `PRONTIDAO_TIMEOUT_SEGUNDOS`: espera máxima de cada verificação do ready;
 - `SALDOS_LIMITE_PADRAO` e `SALDOS_LIMITE_MAXIMO`: dias por página do
-  intervalo quando `limite` é omitido e maior `limite` aceito (TD-008).
+  intervalo quando `limite` é omitido e maior `limite` aceito (TD-008);
+- `FASE_INTERVALO_SEGUNDOS`: intervalo de leitura da fase da reconstrução
+  para `cashflow_reconstrucao_fase` (005-T3; ver `fase`).
 """
 
 import asyncio
+import contextlib
 import os
 from collections.abc import AsyncIterator, Callable, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -34,6 +37,7 @@ from seguranca import ValidadorJwt
 from starlette.concurrency import run_in_threadpool
 
 from consolidado.adaptadores.http.app import COMPONENTE, Prontidao, criar_app
+from consolidado.adaptadores.http.fase import CONSULTA_FASE, LerFase, vigiar_fase
 from consolidado.adaptadores.postgres import (
     FabricaConexao,
     LeituraConsolidadoPostgres,
@@ -124,6 +128,21 @@ def fabrica_de_conexao(pool: Pool) -> FabricaConexao:
     return conexao
 
 
+def leitor_de_fase(pool: Pool, timeout_segundos: float) -> LerFase:
+    """Fase da linha mais recente de `fase_reconstrucao` (migração 0003)."""
+
+    async def ler() -> str | None:
+        async def consultar() -> str | None:
+            async with pool.connection(timeout=timeout_segundos) as conexao:
+                cursor = await conexao.execute(CONSULTA_FASE)
+                linha = await cursor.fetchone()
+            return None if linha is None else str(linha[0])
+
+        return await asyncio.wait_for(consultar(), timeout_segundos)
+
+    return ler
+
+
 def prontidao_de(
     pool: Pool, validador: ValidadorJwt, timeout_segundos: float
 ) -> Prontidao:
@@ -176,13 +195,21 @@ def criar_app_do_ambiente(
         limite_maximo=int(ambiente.get("SALDOS_LIMITE_MAXIMO", str(LIMITE_MAXIMO))),
     )
     timeout = float(ambiente.get("PRONTIDAO_TIMEOUT_SEGUNDOS", "2"))
+    fase = metricas.medidor("cashflow_reconstrucao_fase")
+    intervalo_fase = float(ambiente.get("FASE_INTERVALO_SEGUNDOS", "10"))
 
     @asynccontextmanager
     async def ciclo_de_vida(_: FastAPI) -> AsyncIterator[None]:
         await pool.open(wait=False)
+        vigia = asyncio.create_task(
+            vigiar_fase(leitor_de_fase(pool, timeout), fase, intervalo_fase)
+        )
         try:
             yield
         finally:
+            vigia.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await vigia
             await pool.close()
 
     return criar_app(
