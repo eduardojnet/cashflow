@@ -10,11 +10,16 @@ cada fase tem um código fixo; o painel traduz o código no nome.
 |---|---|---|
 | 0 | nenhuma reconstrução registrada | (ausência de linha) |
 | 1 | `construindo`: candidata criada, recebendo o replay | `reconstruir iniciar` |
-| 2 | `barreira`: consumidores em pausa para a troca | troca e rollback (005-T4) |
-| 3 | `concluida`: candidata virou a ativa | troca (005-T4) |
-| 4 | `revertida`: rollback devolveu a ativa à anterior | rollback (005-T4) |
+| 2 | `barreira`: consumidores em pausa para a troca | `geracao trocar` e `rollback` |
+| 3 | `concluida`: candidata virou a ativa | `geracao trocar` (e `rollback` de um rollback) |
+| 4 | `revertida`: rollback devolveu a ativa à anterior | `geracao rollback` |
 | 5 | `cancelada`: candidata descartada antes da troca | `reconstruir cancelar` |
-| 6 | `descartada`: geração reconstruída descartada depois da troca | descarte (005-T4) |
+| 6 | `descartada`: geração anterior descartada depois da troca | `geracao descartar` |
+
+Na troca, a fase é a da candidata. No rollback, é a da geração mais nova do
+par ativa e anterior, que é sempre a reconstruída (005-T4). No descarte, a
+da geração descartada. Troca ou rollback recusado devolve a fase que havia
+antes da barreira.
 
 Os códigos não mudam de significado: fase nova recebe código novo. A API
 do consolidado guarda o mesmo mapa (sua imagem não leva o coordenador) e um

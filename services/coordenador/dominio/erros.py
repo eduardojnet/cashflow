@@ -35,3 +35,20 @@ class SemReconstrucao(ErroDominio):
 
     def __init__(self) -> None:
         super().__init__("nenhuma reconstrução em andamento (sem geração construindo)")
+
+
+class SemAnterior(ErroDominio):
+    """Não há geração `anterior` para rollback ou descarte (D-005)."""
+
+    def __init__(self) -> None:
+        super().__init__("nenhuma geração anterior (sem troca a desfazer ou descartar)")
+
+
+class TrocaRecusada(ErroDominio):
+    """Candidata fora do critério de aceite no momento da barreira (FR-009)."""
+
+    def __init__(self, pendencias: list[str]) -> None:
+        super().__init__(
+            "troca recusada pelo critério de aceite (FR-009): " + "; ".join(pendencias)
+        )
+        self.pendencias = pendencias

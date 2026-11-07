@@ -1,5 +1,22 @@
-"""Aplicação do coordenador: casos de uso da reconstrução (005-T3)."""
+"""Aplicação do coordenador: casos de uso da reconstrução (005-T3) e da
+troca, rollback e descarte de gerações (005-T4)."""
 
+from coordenador.aplicacao.geracoes import (
+    AbrirTransacaoTroca,
+    BarreiraNaoConfirmada,
+    BloquearOperacao,
+    ConfiguracaoBarreira,
+    Controle,
+    DescartarAnterior,
+    OperacaoConcorrente,
+    OperacaoRecusada,
+    PedidoBarreira,
+    ReverterTroca,
+    TransacaoTroca,
+    TrocaConcluida,
+    TrocarGeracao,
+    pendentes_da_barreira,
+)
 from coordenador.aplicacao.reconstrucao import (
     PAPEL_OPERACAO,
     AbrirTransacao,
@@ -17,13 +34,27 @@ from coordenador.aplicacao.reconstrucao import (
 __all__ = [
     "PAPEL_OPERACAO",
     "AbrirTransacao",
+    "AbrirTransacaoTroca",
+    "BarreiraNaoConfirmada",
+    "BloquearOperacao",
     "CancelarReconstrucao",
+    "ConfiguracaoBarreira",
     "ConsultarSituacao",
+    "Controle",
+    "DescartarAnterior",
     "IdentidadeRecusada",
     "IniciarReconstrucao",
     "OperacaoConcluida",
+    "OperacaoConcorrente",
+    "OperacaoRecusada",
+    "PedidoBarreira",
+    "ReverterTroca",
     "Situacao",
     "SituacaoConsumidor",
     "SituacaoGeracao",
     "TransacaoGeracoes",
+    "TransacaoTroca",
+    "TrocaConcluida",
+    "TrocarGeracao",
+    "pendentes_da_barreira",
 ]

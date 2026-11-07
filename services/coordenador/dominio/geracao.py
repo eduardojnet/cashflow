@@ -68,6 +68,19 @@ class Geracao:
         return Geracao(id=self.id, estado=destino)
 
 
+def trocar_ativa(saindo: Geracao, entrando: Geracao) -> tuple[Geracao, Geracao]:
+    """Troca (FR-005) e rollback (FR-006): `saindo` vai de `ativa` a `anterior`
+    e `entrando` (a candidata na troca, a anterior no rollback) vira a ativa.
+
+    Devolve as duas gerações nos estados novos, na ordem em que o banco deve
+    mudá-las: a ativa sai antes, porque `ux_geracao_uma_ativa` não admite
+    duas ativas nem por um comando (migração 0002).
+    """
+    return saindo.transitar(EstadoGeracao.ANTERIOR), entrando.transitar(
+        EstadoGeracao.ATIVA
+    )
+
+
 def verificar_inicio_reconstrucao(geracoes: Iterable[Geracao]) -> None:
     """Recusa a reconstrução se já houver geração `construindo` ou `anterior`."""
     presentes = {geracao.estado for geracao in geracoes}

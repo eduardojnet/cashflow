@@ -1,8 +1,11 @@
-"""CLI do coordenador da projeção (005-T3; design 005 §3, §4).
+"""CLI do coordenador da projeção (005-T3, 005-T4; design 005 §3, §4).
 
     python -m coordenador reconstruir iniciar
     python -m coordenador reconstruir status [--json] [--lacunas N]
     python -m coordenador reconstruir cancelar
+    python -m coordenador geracao trocar [--tempo-limite S]
+    python -m coordenador geracao rollback [--tempo-limite S]
+    python -m coordenador geracao descartar
 
 No compose, pelo serviço `coordenador` (perfil `operacao`), só na rede do
 consolidado:
@@ -17,9 +20,22 @@ Sequência de uma reconstrução (design 005 §3):
    `docker compose -f infra/compose.yaml run --rm relay-republicar
    --desde-posicao 1` (D-002). O coordenador não alcança o livro (INFRA 6.7).
 3. `reconstruir status` até o critério de troca (FR-009) ficar atendido.
-4. Troca, rollback e descarte: `geracao trocar|rollback|descartar` (005-T4).
+4. `geracao trocar`: ergue a barreira, espera a pausa dos consumidores,
+   confere o critério com eles parados e troca a ativa numa transação; a
+   ativa de antes fica `anterior` (D-005). Recusada, nada muda.
+5. Se a nova ativa estiver ruim, `geracao rollback` devolve a anterior,
+   pelo mesmo protocolo de barreira (FR-006).
+6. `geracao descartar` descarta a anterior e libera o espaço dela; só então
+   uma nova reconstrução pode começar (INFRA 7.5).
 
 `reconstruir cancelar` descarta a candidata antes da troca.
+
+Barreira (DQ-001): a troca e o rollback esperam a pausa de cada consumidor
+registrado até `--tempo-limite` segundos (padrão:
+`COORDENADOR_BARREIRA_TEMPO_LIMITE_SEGUNDOS`, ou 30). Sem confirmação, a
+operação é recusada e a barreira, liberada. Se o coordenador cair com a
+barreira erguida, o consumo fica pausado até a próxima `geracao trocar` ou
+`geracao rollback`, que libera a barreira ao terminar, aceita ou recusada.
 
 Acesso (FR-008; INFRA 5.11, 6.4): conexão como consolidado_operacao, por
 variáveis de ambiente: `PG_CONSOLIDADO_HOST`, `PG_CONSOLIDADO_PORTA`,
@@ -49,18 +65,28 @@ import psycopg
 from psycopg.conninfo import make_conninfo
 
 from coordenador.adaptadores.logs import configurar_logging
-from coordenador.adaptadores.postgres import abridor_de_transacao
+from coordenador.adaptadores.postgres import (
+    abridor_de_transacao,
+    bloqueio_de_operacao,
+)
 from coordenador.aplicacao import (
     CancelarReconstrucao,
+    ConfiguracaoBarreira,
     ConsultarSituacao,
+    DescartarAnterior,
     IdentidadeRecusada,
     IniciarReconstrucao,
+    OperacaoRecusada,
+    ReverterTroca,
     Situacao,
     SituacaoGeracao,
+    TrocarGeracao,
 )
+from coordenador.aplicacao.geracoes import TEMPO_LIMITE_PADRAO_SEGUNDOS
 from coordenador.dominio import ErroDominio
 
 COMPONENTE = "coordenador"
+VARIAVEL_TEMPO_LIMITE = "COORDENADOR_BARREIRA_TEMPO_LIMITE_SEGUNDOS"
 REPUBLICAR = (
     "docker compose -f infra/compose.yaml run --rm relay-republicar --desde-posicao 1"
 )
@@ -90,6 +116,26 @@ def _limite(texto: str) -> int:
     return valor
 
 
+def _segundos(texto: str) -> float:
+    try:
+        valor = float(texto)
+    except ValueError:
+        raise argparse.ArgumentTypeError("informe os segundos em número") from None
+    if not valor > 0:
+        raise argparse.ArgumentTypeError("o tempo limite deve ser positivo")
+    return valor
+
+
+def tempo_limite_do_ambiente(ambiente: Mapping[str, str]) -> float:
+    texto = ambiente.get(VARIAVEL_TEMPO_LIMITE)
+    if not texto:
+        return TEMPO_LIMITE_PADRAO_SEGUNDOS
+    try:
+        return _segundos(texto)
+    except argparse.ArgumentTypeError as erro:
+        raise SystemExit(f"{VARIAVEL_TEMPO_LIMITE} inválido: {erro}") from None
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="coordenador",
@@ -113,6 +159,29 @@ def _parser() -> argparse.ArgumentParser:
         help="quantas posições em lacuna listar por geração (padrão: 20)",
     )
     acoes.add_parser("cancelar", help="descarta a geração candidata")
+
+    geracao = grupos.add_parser(
+        "geracao", help="trocar a geração ativa, desfazer a troca ou descartar"
+    )
+    operacoes = geracao.add_subparsers(dest="acao", required=True)
+    for acao, ajuda in (
+        ("trocar", "torna a candidata a ativa, com barreira e critério FR-009"),
+        ("rollback", "devolve a geração anterior a ativa, com barreira"),
+    ):
+        operacao = operacoes.add_parser(acao, help=ajuda)
+        operacao.add_argument(
+            "--tempo-limite",
+            type=_segundos,
+            default=None,
+            metavar="S",
+            help=(
+                "segundos de espera pela pausa dos consumidores (padrão:"
+                f" {VARIAVEL_TEMPO_LIMITE} ou {TEMPO_LIMITE_PADRAO_SEGUNDOS:g})"
+            ),
+        )
+    operacoes.add_parser(
+        "descartar", help="descarta a geração anterior e libera o espaço dela"
+    )
     return parser
 
 
@@ -197,7 +266,37 @@ def situacao_em_texto(situacao: Situacao) -> str:
     return "\n".join(linhas)
 
 
-def _executar(argumentos: argparse.Namespace, conninfo: str) -> str:
+def _executar_geracao(
+    argumentos: argparse.Namespace, conninfo: str, ambiente: Mapping[str, str]
+) -> str:
+    abrir = abridor_de_transacao(conninfo)
+    bloquear = bloqueio_de_operacao(conninfo)
+    if argumentos.acao == "descartar":
+        descartada = DescartarAnterior(abrir, bloquear)()
+        return (
+            f"geração {descartada.geracao_id} descartada; dados removidos."
+            " Uma nova reconstrução já pode começar."
+        )
+    tempo_limite = argumentos.tempo_limite or tempo_limite_do_ambiente(ambiente)
+    configuracao = ConfiguracaoBarreira(tempo_limite_segundos=tempo_limite)
+    if argumentos.acao == "trocar":
+        trocada = TrocarGeracao(abrir, bloquear, configuracao)()
+        return (
+            f"geração {trocada.ativa_id} ativa; geração {trocada.anterior_id}"
+            " anterior, retida para rollback até: geracao descartar"
+        )
+    revertida = ReverterTroca(abrir, bloquear, configuracao)()
+    return (
+        f"rollback concluído: geração {revertida.ativa_id} ativa; geração"
+        f" {revertida.anterior_id} anterior"
+    )
+
+
+def _executar(
+    argumentos: argparse.Namespace, conninfo: str, ambiente: Mapping[str, str]
+) -> str:
+    if argumentos.grupo == "geracao":
+        return _executar_geracao(argumentos, conninfo, ambiente)
     if argumentos.acao == "iniciar":
         iniciada = IniciarReconstrucao(abridor_de_transacao(conninfo))()
         return (
@@ -226,8 +325,8 @@ def main(
     comando = f"{argumentos.grupo} {argumentos.acao}"
 
     try:
-        saida = _executar(argumentos, conninfo)
-    except (ErroDominio, IdentidadeRecusada) as erro:
+        saida = _executar(argumentos, conninfo, ambiente)
+    except (ErroDominio, IdentidadeRecusada, OperacaoRecusada) as erro:
         print(f"{comando} recusado: {erro}", file=sys.stderr)
         log.warning(
             "operação recusada",

@@ -1,8 +1,11 @@
-"""Transação do coordenador no banco do consolidado com psycopg 3 (005-T3).
+"""Transação do coordenador no banco do consolidado com psycopg 3 (005-T3,
+005-T4).
 
-Implementa `TransacaoGeracoes` com o papel consolidado_operacao, que cria a
-candidata e o checkpoint dela, muda o estado das gerações, grava a fase e lê
-checkpoint, lacunas, contribuições e consumidores (migração 0002). Sem
+Implementa `TransacaoGeracoes` e `TransacaoTroca` com o papel
+consolidado_operacao, que cria a candidata e o checkpoint dela, muda o estado
+das gerações, ergue e libera a barreira, aponta a geração ativa, grava a
+fase e lê checkpoint, lacunas, contribuições e consumidores (migração 0002).
+Sem
 SQL no banco do livro: a rede do coordenador só alcança o pg-consolidado
 (INFRA 6.7).
 
@@ -19,18 +22,30 @@ principal (migração 0002); a verificação cobre o dono das tabelas.
 
 Concorrência: dois `iniciar` simultâneos esbarram na exclusão
 `ex_geracao_uma_alem_da_ativa`; o segundo espera o primeiro e, se ele
-confirmar, recebe `ReconstrucaoRecusada`.
+confirmar, recebe `ReconstrucaoRecusada`. Troca, rollback e descarte rodam
+sob o bloqueio consultivo `CHAVE_BLOQUEIO_OPERACAO`, tomado numa conexão
+própria durante toda a operação (`bloqueio_de_operacao`): com ele ocupado, a
+operação é recusada sem esperar. Se o coordenador cair, o fim da sessão
+solta o bloqueio.
+
+Troca e rollback mudam duas gerações na mesma transação. A ativa sai antes
+(`ux_geracao_uma_ativa` não é adiável) e, entre os dois comandos, há duas
+gerações fora da ativa: por isso `adiar_exclusao` adia
+`ex_geracao_uma_alem_da_ativa` para o COMMIT, que a confere.
 """
 
 from collections.abc import Callable, Iterator
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, suppress
 from typing import Any
 
 import psycopg
 
 from coordenador.aplicacao import (
     PAPEL_OPERACAO,
+    Controle,
     IdentidadeRecusada,
+    OperacaoConcorrente,
+    PedidoBarreira,
     Situacao,
     SituacaoConsumidor,
     SituacaoGeracao,
@@ -39,10 +54,14 @@ from coordenador.dominio import (
     EstadoGeracao,
     FaseReconstrucao,
     Geracao,
+    Progresso,
     ReconstrucaoRecusada,
 )
 
 EXCLUSAO_UMA_ALEM_DA_ATIVA = "ex_geracao_uma_alem_da_ativa"
+# Bloqueio consultivo das operações de geração (troca, rollback, descarte).
+# Número fixo e exclusivo do coordenador no banco do consolidado.
+CHAVE_BLOQUEIO_OPERACAO = 5_004
 
 _GERACOES = """
 SELECT g.id, g.estado, g.criada_em, g.ativada_em,
@@ -114,6 +133,80 @@ class TransacaoGeracoesPostgres:
             (geracao_id, str(fase)),
         )
 
+    def geracoes_para_atualizar(self) -> list[Geracao]:
+        linhas = self._conexao.execute(
+            "SELECT id, estado FROM geracao WHERE estado <> 'descartada'"
+            " ORDER BY id FOR UPDATE"
+        ).fetchall()
+        return [Geracao(id_, EstadoGeracao(estado)) for id_, estado in linhas]
+
+    def controle_para_atualizar(self) -> Controle:
+        linha = self._conexao.execute(
+            "SELECT geracao_ativa_id, barreira, versao FROM controle_projecao"
+            " WHERE id = 1 FOR UPDATE"
+        ).fetchone()
+        if linha is None:
+            raise RuntimeError("controle_projecao sem linha (migração 0001)")
+        return Controle(*linha)
+
+    def erguer_barreira(self) -> PedidoBarreira:
+        anterior = self.controle_para_atualizar()
+        # clock_timestamp(): o worker só confirma depois do COMMIT, então a
+        # confirmação válida tem `visto_em` posterior a este instante.
+        linha = self._conexao.execute(
+            "UPDATE controle_projecao SET barreira = 'solicitada',"
+            " versao = versao + 1 WHERE id = 1 RETURNING versao, clock_timestamp()"
+        ).fetchone()
+        if linha is None:
+            raise RuntimeError("controle_projecao sem linha (migração 0001)")
+        versao, instante = linha
+        return PedidoBarreira(
+            versao=versao, instante=instante, herdada=anterior.barreira == "solicitada"
+        )
+
+    def liberar_barreira(self) -> bool:
+        cursor = self._conexao.execute(
+            "UPDATE controle_projecao SET barreira = 'liberada',"
+            " versao = versao + 1 WHERE id = 1 AND barreira = 'solicitada'"
+        )
+        return cursor.rowcount == 1
+
+    def consumidores(self) -> list[SituacaoConsumidor]:
+        return [
+            SituacaoConsumidor(consumidor_id, pausado, visto_em)
+            for consumidor_id, pausado, visto_em in self._conexao.execute(
+                "SELECT consumidor_id, pausado, visto_em FROM estado_consumidor"
+                " ORDER BY consumidor_id"
+            ).fetchall()
+        ]
+
+    def progresso(self, geracao_id: int) -> Progresso:
+        linha = self._conexao.execute(
+            "SELECT (SELECT posicao_continua FROM checkpoint WHERE geracao_id = %s),"
+            " (SELECT count(*) FROM lacuna WHERE geracao_id = %s)",
+            (geracao_id, geracao_id),
+        ).fetchone()
+        if linha is None:
+            raise RuntimeError("consulta sem linha")
+        checkpoint, lacunas = linha
+        return Progresso(checkpoint=checkpoint or 0, lacunas=lacunas)
+
+    def fase_de(self, geracao_id: int) -> str | None:
+        linha = self._conexao.execute(
+            "SELECT fase FROM fase_reconstrucao WHERE geracao_id = %s", (geracao_id,)
+        ).fetchone()
+        return None if linha is None else str(linha[0])
+
+    def adiar_exclusao(self) -> None:
+        self._conexao.execute(f"SET CONSTRAINTS {EXCLUSAO_UMA_ALEM_DA_ATIVA} DEFERRED")
+
+    def apontar_ativa(self, geracao_id: int) -> None:
+        self._conexao.execute(
+            "UPDATE controle_projecao SET geracao_ativa_id = %s,"
+            " versao = versao + 1 WHERE id = 1",
+            (geracao_id,),
+        )
+
     def remover_dados(self, geracao_id: int) -> None:
         self._conexao.execute(
             "SELECT remover_dados_geracao_descartada(%s)", (geracao_id,)
@@ -153,13 +246,7 @@ class TransacaoGeracoesPostgres:
                 fase_em,
             ) in self._conexao.execute(_GERACOES).fetchall()
         )
-        consumidores = tuple(
-            SituacaoConsumidor(consumidor_id, pausado, visto_em)
-            for consumidor_id, pausado, visto_em in self._conexao.execute(
-                "SELECT consumidor_id, pausado, visto_em FROM estado_consumidor"
-                " ORDER BY consumidor_id"
-            ).fetchall()
-        )
+        consumidores = tuple(self.consumidores())
         geracao_ativa_id, barreira, versao = controle
         return Situacao(geracao_ativa_id, barreira, versao, geracoes, consumidores)
 
@@ -200,3 +287,37 @@ def abridor_de_transacao(
             yield transacao
 
     return abrir
+
+
+def bloqueio_de_operacao(
+    conninfo: str, *, papel_exigido: str | None = PAPEL_OPERACAO
+) -> Callable[[], AbstractContextManager[None]]:
+    """Bloqueio exclusivo das operações de geração (`BloquearOperacao`).
+
+    Conexão própria em autocommit, aberta durante toda a operação: o
+    bloqueio consultivo de sessão não depende das transações da operação.
+    Com ele ocupado, `OperacaoConcorrente` sem esperar.
+    """
+
+    @contextmanager
+    def bloquear() -> Iterator[None]:
+        with psycopg.connect(conninfo, autocommit=True) as conexao:
+            if papel_exigido is not None:
+                papel = TransacaoGeracoesPostgres(conexao).operador()
+                if papel != papel_exigido:
+                    raise IdentidadeRecusada(papel)
+            linha = conexao.execute(
+                "SELECT pg_try_advisory_lock(%s)", (CHAVE_BLOQUEIO_OPERACAO,)
+            ).fetchone()
+            if linha is None or not linha[0]:
+                raise OperacaoConcorrente("outra operação de geração está em andamento")
+            try:
+                yield
+            finally:
+                # Conexão perdida já soltou o bloqueio com a sessão.
+                with suppress(psycopg.Error):
+                    conexao.execute(
+                        "SELECT pg_advisory_unlock(%s)", (CHAVE_BLOQUEIO_OPERACAO,)
+                    )
+
+    return bloquear
