@@ -191,6 +191,37 @@ services:
         condition: service_healthy
     restart: "no"
 
+  livro-relatorio:
+    # Relatório de totais por data do livro até uma posição, para a
+    # reconciliação (005-T5; D-002; design 005 §4), com a imagem da API de
+    # lançamentos e o papel livro_replay, que só lê posição, tipo, valor e
+    # data (migração 0004; FR-008; INFRA 5.11, 6.4). Só na rede do livro: o
+    # relatório sai pela saída padrão e chega ao coordenador por arquivo ou
+    # pela entrada padrão, nunca por rede entre os lados (INFRA 6.7). Sem
+    # porta. Execução sob demanda, pelo operador:
+    #
+    #   docker compose -f infra/compose.yaml run --rm -T livro-relatorio > relatorio.json
+    #   docker compose -f infra/compose.yaml run --rm -T coordenador reconciliar < relatorio.json
+    #
+    # O perfil mantém o serviço fora do `up`, como livro-migracao. Versões das
+    # imagens base: services/lancamentos/Dockerfile.
+    profiles: ["operacao"]
+    build:
+      context: ..
+      dockerfile: services/lancamentos/Dockerfile
+    # O entrypoint do compose descarta o CMD da imagem (a API); argumentos do
+    # `run`, como `--ate-posicao P`, vão para o comando.
+    entrypoint: ["python", "-m", "lancamentos.comandos.relatorio"]
+    environment:
+      PG_LIVRO_HOST: pg-livro
+      PG_LIVRO_SENHA_REPLAY: ${PG_LIVRO_SENHA_REPLAY:?defina PG_LIVRO_SENHA_REPLAY em infra/.env}
+    networks:
+      - rede-livro
+    depends_on:
+      pg-livro:
+        condition: service_healthy
+    restart: "no"
+
   pg-consolidado:
     # Mesma versão e fonte de pg-livro (TD-007, 2026-11-06).
     image: postgres:18.6-alpine3.24
@@ -242,8 +273,10 @@ services:
     restart: "no"
 
   coordenador:
-    # Coordenador da projeção (spec 005; 005-T3): CLI que inicia, acompanha e
-    # cancela a reconstrução em geração candidata (design 005 §3, §4). Papel
+    # Coordenador da projeção (spec 005; 005-T3 a T5): CLI que inicia,
+    # acompanha e cancela a reconstrução em geração candidata, troca a
+    # geração ativa e reconcilia a ativa com o relatório de livro-relatorio,
+    # lido da entrada padrão (design 005 §3, §4). Papel
     # consolidado_operacao (FR-008; INFRA 5.11). Só na rede do consolidado:
     # não alcança pg-livro (INFRA 6.7); a republicação da outbox é feita no
     # lado do livro, pelo serviço relay-republicar. Sem porta (INFRA 6.4).
@@ -252,6 +285,7 @@ services:
     #   docker compose -f infra/compose.yaml run --rm --build coordenador reconstruir iniciar
     #   docker compose -f infra/compose.yaml run --rm coordenador reconstruir status
     #   docker compose -f infra/compose.yaml run --rm coordenador reconstruir cancelar
+    #   docker compose -f infra/compose.yaml run --rm -T coordenador reconciliar < relatorio.json
     #
     # O perfil mantém o serviço fora do `up`, como livro-migracao. Versões das
     # imagens base: services/coordenador/Dockerfile.

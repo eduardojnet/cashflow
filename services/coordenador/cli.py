@@ -1,4 +1,4 @@
-"""CLI do coordenador da projeção (005-T3, 005-T4; design 005 §3, §4).
+"""CLI do coordenador da projeção (005-T3, 005-T4, 005-T5; design 005 §3, §4).
 
     python -m coordenador reconstruir iniciar
     python -m coordenador reconstruir status [--json] [--lacunas N]
@@ -6,6 +6,8 @@
     python -m coordenador geracao trocar [--tempo-limite S]
     python -m coordenador geracao rollback [--tempo-limite S]
     python -m coordenador geracao descartar
+    python -m coordenador reconciliar [--relatorio-livro ARQUIVO] [--json]
+                                      [--faltantes N]
 
 No compose, pelo serviço `coordenador` (perfil `operacao`), só na rede do
 consolidado:
@@ -30,6 +32,20 @@ Sequência de uma reconstrução (design 005 §3):
 
 `reconstruir cancelar` descarta a candidata antes da troca.
 
+Reconciliação (FR-001; D-002, D-004): no lado do livro, o operador exporta
+os totais por data até a última posição e entrega o relatório ao
+coordenador pela entrada padrão (ou por arquivo, com `--relatorio-livro`),
+sem rede entre os lados (INFRA 6.7):
+
+    docker compose -f infra/compose.yaml run --rm -T livro-relatorio > relatorio.json
+    docker compose -f infra/compose.yaml run --rm -T coordenador reconciliar < relatorio.json
+
+O coordenador compara com a geração ativa e lista as datas divergentes, as
+posições faltantes até a posição do relatório e as datas em que o saldo
+materializado não bate com as contribuições. Só reporta: a correção é a
+reconstrução (D-004). Os valores aparecem só no relatório, na saída padrão,
+nunca no log (design 005 §6).
+
 Barreira (DQ-001): a troca e o rollback esperam a pausa de cada consumidor
 registrado até `--tempo-limite` segundos (padrão:
 `COORDENADOR_BARREIRA_TEMPO_LIMITE_SEGUNDOS`, ou 30). Sem confirmação, a
@@ -47,8 +63,8 @@ recusa qualquer papel que não seja consolidado_operacao, inclusive o dono
 das tabelas. A senha não vai a log nem à saída.
 
 Saída: o resultado vai para a saída padrão; os logs JSON, para a de erro.
-Código de saída 0 em sucesso, 1 em operação recusada ou falha do banco e 2
-em uso inválido. O `status` mostra só identificadores, estados, posições e
+Código de saída 0 em sucesso, 1 em operação recusada ou falha do banco, 2
+em uso inválido e 3 na reconciliação que encontra divergência ou lacuna. O `status` mostra só identificadores, estados, posições e
 contagens, nunca valores (design 005 §6).
 """
 
@@ -59,6 +75,8 @@ import os
 import sys
 from collections.abc import Mapping, Sequence
 from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -69,6 +87,7 @@ from coordenador.adaptadores.postgres import (
     abridor_de_transacao,
     bloqueio_de_operacao,
 )
+from coordenador.adaptadores.relatorio_livro import ler_relatorio
 from coordenador.aplicacao import (
     CancelarReconstrucao,
     ConfiguracaoBarreira,
@@ -77,16 +96,26 @@ from coordenador.aplicacao import (
     IdentidadeRecusada,
     IniciarReconstrucao,
     OperacaoRecusada,
+    Reconciliar,
     ReverterTroca,
     Situacao,
     SituacaoGeracao,
     TrocarGeracao,
 )
 from coordenador.aplicacao.geracoes import TEMPO_LIMITE_PADRAO_SEGUNDOS
-from coordenador.dominio import ErroDominio
+from coordenador.dominio import (
+    Divergencia,
+    ErroDominio,
+    Reconciliacao,
+    SaldoInconsistente,
+    SaldoMaterializado,
+    TotalDoDia,
+)
 
 COMPONENTE = "coordenador"
 VARIAVEL_TEMPO_LIMITE = "COORDENADOR_BARREIRA_TEMPO_LIMITE_SEGUNDOS"
+# Reconciliação concluída com divergência ou lacuna (FR-001).
+CODIGO_DIVERGENCIA = 3
 REPUBLICAR = (
     "docker compose -f infra/compose.yaml run --rm relay-republicar --desde-posicao 1"
 )
@@ -182,6 +211,25 @@ def _parser() -> argparse.ArgumentParser:
     operacoes.add_parser(
         "descartar", help="descarta a geração anterior e libera o espaço dela"
     )
+
+    reconciliar = grupos.add_parser(
+        "reconciliar",
+        help="compara a geração ativa com o relatório de totais do livro",
+    )
+    reconciliar.add_argument(
+        "--relatorio-livro",
+        default="-",
+        metavar="ARQUIVO",
+        help="relatório de livro-relatorio; '-' lê da entrada padrão (padrão)",
+    )
+    reconciliar.add_argument("--json", action="store_true", help="saída em JSON")
+    reconciliar.add_argument(
+        "--faltantes",
+        type=_limite,
+        default=20,
+        metavar="N",
+        help="quantos intervalos de posições faltantes listar (padrão: 20)",
+    )
     return parser
 
 
@@ -266,6 +314,158 @@ def situacao_em_texto(situacao: Situacao) -> str:
     return "\n".join(linhas)
 
 
+def _valor(valor: Decimal) -> str:
+    return str(valor.quantize(Decimal("0.01")))
+
+
+def _total_em_json(total: TotalDoDia | None) -> dict[str, Any] | None:
+    if total is None:
+        return None
+    return {
+        "quantidade": total.quantidade,
+        "total_creditos": _valor(total.total_creditos),
+        "total_debitos": _valor(total.total_debitos),
+    }
+
+
+def _saldo_em_json(saldo: SaldoMaterializado) -> dict[str, str]:
+    return {
+        "total_creditos": _valor(saldo.total_creditos),
+        "total_debitos": _valor(saldo.total_debitos),
+    }
+
+
+def reconciliacao_em_json(reconciliacao: Reconciliacao) -> dict[str, Any]:
+    return {
+        "geracao_id": reconciliacao.geracao_id,
+        "ate_posicao": reconciliacao.ate_posicao,
+        "checkpoint": reconciliacao.checkpoint,
+        "conciliada": reconciliacao.conciliada,
+        "datas_no_livro": reconciliacao.datas_no_livro,
+        "divergencias": [
+            {
+                "data": d.data.isoformat(),
+                "tipo": str(d.tipo),
+                "livro": _total_em_json(d.livro),
+                "projecao": _total_em_json(d.projecao),
+            }
+            for d in reconciliacao.divergencias
+        ],
+        "posicoes_faltantes": reconciliacao.posicoes_faltantes,
+        "primeiros_faltantes": [
+            {"inicio": f.inicio, "fim": f.fim}
+            for f in reconciliacao.primeiros_faltantes
+        ],
+        "saldo_inconsistente": [
+            {
+                "data": s.data.isoformat(),
+                "saldo": _saldo_em_json(s.saldo),
+                "contribuicoes": _saldo_em_json(s.contribuicoes),
+            }
+            for s in reconciliacao.saldo_inconsistente
+        ],
+    }
+
+
+def _total_em_texto(total: TotalDoDia | None) -> str:
+    if total is None:
+        return "nenhum lançamento"
+    return (
+        f"{total.quantidade} lançamentos, créditos {_valor(total.total_creditos)},"
+        f" débitos {_valor(total.total_debitos)}"
+    )
+
+
+_TIPO_EM_TEXTO = {
+    "ausente_na_projecao": "data ausente da projeção",
+    "ausente_no_livro": "data ausente do livro",
+    "totais_diferentes": "totais diferentes",
+}
+
+
+def _divergencia_em_texto(divergencia: Divergencia) -> list[str]:
+    tipo = _TIPO_EM_TEXTO[str(divergencia.tipo)]
+    return [
+        f"divergência em {divergencia.data.isoformat()}: {tipo}",
+        f"  livro:    {_total_em_texto(divergencia.livro)}",
+        f"  projeção: {_total_em_texto(divergencia.projecao)}",
+    ]
+
+
+def _saldo_em_texto(saldo: SaldoMaterializado) -> str:
+    return (
+        f"créditos {_valor(saldo.total_creditos)},"
+        f" débitos {_valor(saldo.total_debitos)}"
+    )
+
+
+def _inconsistencia_em_texto(inconsistente: SaldoInconsistente) -> list[str]:
+    data = inconsistente.data.isoformat()
+    return [
+        f"saldo materializado diferente das contribuições em {data}:",
+        f"  saldo_diario:  {_saldo_em_texto(inconsistente.saldo)}",
+        f"  contribuições: {_saldo_em_texto(inconsistente.contribuicoes)}",
+    ]
+
+
+def reconciliacao_em_texto(reconciliacao: Reconciliacao) -> str:
+    linhas = [
+        (
+            f"reconciliação da geração ativa {reconciliacao.geracao_id} até a"
+            f" posição {reconciliacao.ate_posicao}"
+            f" (checkpoint da ativa: {reconciliacao.checkpoint})"
+        ),
+        (
+            f"datas no livro: {reconciliacao.datas_no_livro};"
+            f" datas divergentes: {len(reconciliacao.divergencias)};"
+            f" posições faltantes: {reconciliacao.posicoes_faltantes}"
+        ),
+    ]
+    for divergencia in reconciliacao.divergencias:
+        linhas.extend(_divergencia_em_texto(divergencia))
+    if reconciliacao.primeiros_faltantes:
+        intervalos = ", ".join(
+            str(f.inicio) if f.inicio == f.fim else f"{f.inicio}-{f.fim}"
+            for f in reconciliacao.primeiros_faltantes
+        )
+        linhas.append(f"posições faltantes na ativa (primeiras): {intervalos}")
+    for inconsistente in reconciliacao.saldo_inconsistente:
+        linhas.extend(_inconsistencia_em_texto(inconsistente))
+    if reconciliacao.conciliada:
+        linhas.append("resultado: conciliada")
+    else:
+        linhas.append(
+            "resultado: divergente; corrigir por reconstrução (reconstruir iniciar)"
+        )
+    return "\n".join(linhas)
+
+
+def _ler_relatorio_livro(caminho: str) -> str:
+    if caminho == "-":
+        return sys.stdin.read()
+    return Path(caminho).read_text(encoding="utf-8")
+
+
+def _executar_reconciliacao(
+    argumentos: argparse.Namespace, conninfo: str
+) -> tuple[str, int]:
+    try:
+        texto = _ler_relatorio_livro(argumentos.relatorio_livro)
+    except (OSError, UnicodeDecodeError) as erro:
+        raise OperacaoRecusada(
+            f"relatório do livro ilegível ({type(erro).__name__})"
+        ) from None
+    relatorio = ler_relatorio(texto)
+    reconciliacao = Reconciliar(abridor_de_transacao(conninfo, somente_leitura=True))(
+        relatorio, argumentos.faltantes
+    )
+    codigo = 0 if reconciliacao.conciliada else CODIGO_DIVERGENCIA
+    if argumentos.json:
+        documento = reconciliacao_em_json(reconciliacao)
+        return json.dumps(documento, ensure_ascii=False, indent=2), codigo
+    return reconciliacao_em_texto(reconciliacao), codigo
+
+
 def _executar_geracao(
     argumentos: argparse.Namespace, conninfo: str, ambiente: Mapping[str, str]
 ) -> str:
@@ -294,7 +494,9 @@ def _executar_geracao(
 
 def _executar(
     argumentos: argparse.Namespace, conninfo: str, ambiente: Mapping[str, str]
-) -> str:
+) -> str | tuple[str, int]:
+    if argumentos.grupo == "reconciliar":
+        return _executar_reconciliacao(argumentos, conninfo)
     if argumentos.grupo == "geracao":
         return _executar_geracao(argumentos, conninfo, ambiente)
     if argumentos.acao == "iniciar":
@@ -322,10 +524,14 @@ def main(
     argumentos = _parser().parse_args(argv)
     configurar_logging(ambiente.get("LOG_NIVEL", "INFO"))
     conninfo = conninfo_do_ambiente(ambiente)
-    comando = f"{argumentos.grupo} {argumentos.acao}"
+    comando = " ".join(
+        parte
+        for parte in (argumentos.grupo, getattr(argumentos, "acao", None))
+        if parte
+    )
 
     try:
-        saida = _executar(argumentos, conninfo, ambiente)
+        resultado = _executar(argumentos, conninfo, ambiente)
     except (ErroDominio, IdentidadeRecusada, OperacaoRecusada) as erro:
         print(f"{comando} recusado: {erro}", file=sys.stderr)
         log.warning(
@@ -343,5 +549,6 @@ def main(
         )
         return 1
 
+    saida, codigo = resultado if isinstance(resultado, tuple) else (resultado, 0)
     print(saida)
-    return 0
+    return codigo

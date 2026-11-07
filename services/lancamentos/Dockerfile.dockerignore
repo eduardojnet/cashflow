@@ -12,4 +12,5 @@
 !services/lancamentos/dominio
 !services/lancamentos/aplicacao
 !services/lancamentos/adaptadores
+!services/lancamentos/comandos
 **/__pycache__

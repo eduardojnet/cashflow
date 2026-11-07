@@ -162,7 +162,7 @@ def test_migracao_fica_em_head_aplicada_por_livro_migracao() -> None:
     )
 
     assert resultado.returncode == 0, resultado.stderr
-    assert resultado.stdout.strip() == "0003"
+    assert resultado.stdout.strip() == "0004"
 
 
 def test_tabelas_do_livro_pertencem_a_livro_migracao() -> None:
@@ -276,17 +276,56 @@ def test_livro_api_nao_tem_privilegio_alem_do_registro(
     ("papel", "tabela"),
     [
         *(("livro_relay", tabela) for tabela in TABELAS if tabela != "outbox"),
-        *(("livro_replay", tabela) for tabela in TABELAS if tabela != "outbox"),
+        *(
+            ("livro_replay", tabela)
+            for tabela in TABELAS
+            if tabela not in ("outbox", "lancamento")
+        ),
     ],
 )
 def test_outros_papeis_ainda_nao_acessam_as_tabelas(papel: str, tabela: str) -> None:
     # Privilégios concedidos pelas migrações das specs 003 e 005; livro_relay
-    # lê a outbox desde a 0002 (003-T1) e livro_replay lê `posicao` da outbox
-    # desde a 0003 (003-T4).
+    # lê a outbox desde a 0002 (003-T1), livro_replay lê `posicao` da outbox
+    # desde a 0003 (003-T4) e as colunas do relatório do livro desde a 0004
+    # (005-T5).
     resultado = _psql(papel, f"SELECT 1 FROM {tabela} LIMIT 1")
 
     assert resultado.returncode != 0
     assert f"permission denied for table {tabela}" in resultado.stderr
+
+
+def test_livro_replay_le_as_colunas_do_relatorio_do_livro() -> None:
+    resultado = _psql(
+        "livro_replay",
+        "SELECT count(*), coalesce(max(posicao), 0) >= 0,"
+        " count(DISTINCT data_lancamento) >= 0, coalesce(sum(valor), 0) >= 0"
+        " FROM lancamento WHERE tipo IN ('CREDITO', 'DEBITO')",
+    )
+
+    assert resultado.returncode == 0, resultado.stderr
+    assert resultado.stdout.strip().split("|")[1:] == ["t", "t", "t"]
+
+
+@pytest.mark.parametrize(
+    "comando",
+    [
+        "SELECT descricao FROM lancamento",
+        "SELECT cliente_id FROM lancamento",
+        "SELECT * FROM lancamento",
+        LANCAMENTO,
+        "UPDATE lancamento SET valor = 1",
+        "DELETE FROM lancamento",
+    ],
+    ids=["descricao", "cliente", "todas-as-colunas", "insert", "update", "delete"],
+)
+def test_livro_replay_nao_le_alem_do_relatorio_nem_escreve_no_livro(
+    comando: str,
+) -> None:
+    # Migração 0004 (005-T5): só posição, tipo, valor e data.
+    resultado = _psql("livro_replay", _em_rollback(comando))
+
+    assert resultado.returncode != 0
+    assert "permission denied for table lancamento" in resultado.stderr
 
 
 @pytest.mark.parametrize(

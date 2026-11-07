@@ -35,11 +35,14 @@ RUN uv sync --frozen --only-group lancamentos --no-editable \
     && rm -rf packages
 
 # Só o código de execução do serviço: sem testes e sem migrações, que têm
-# imagem própria (livro-migracao).
+# imagem própria (livro-migracao). Os comandos de operação do lado do livro
+# (relatório de totais, 005-T5) usam esta mesma imagem pelo serviço
+# livro-relatorio do compose.
 COPY services/lancamentos/__init__.py services/lancamentos/
 COPY services/lancamentos/dominio services/lancamentos/dominio
 COPY services/lancamentos/aplicacao services/lancamentos/aplicacao
 COPY services/lancamentos/adaptadores services/lancamentos/adaptadores
+COPY services/lancamentos/comandos services/lancamentos/comandos
 
 ENV PATH=/opt/venv/bin:$PATH \
     PYTHONPATH=/app/services \

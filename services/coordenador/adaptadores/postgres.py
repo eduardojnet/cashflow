@@ -1,7 +1,8 @@
 """Transação do coordenador no banco do consolidado com psycopg 3 (005-T3,
-005-T4).
+005-T4, 005-T5).
 
-Implementa `TransacaoGeracoes` e `TransacaoTroca` com o papel
+Implementa `TransacaoGeracoes`, `TransacaoTroca` e `TransacaoReconciliacao`
+com o papel
 consolidado_operacao, que cria a candidata e o checkpoint dela, muda o estado
 das gerações, ergue e libera a barreira, aponta a geração ativa, grava a
 fase e lê checkpoint, lacunas, contribuições e consumidores (migração 0002).
@@ -12,8 +13,8 @@ SQL no banco do livro: a rede do coordenador só alcança o pg-consolidado
 Conexão síncrona, uma por comando: o coordenador é uma CLI de execução
 curta, como o comando de republicação do relay. A transação é a do
 `psycopg.connect` em contexto: COMMIT na saída normal, ROLLBACK em exceção.
-O `status` lê em REPEATABLE READ somente leitura, para que todas as
-consultas vejam o mesmo instante.
+O `status` e a reconciliação leem em REPEATABLE READ somente leitura, para
+que todas as consultas vejam o mesmo instante.
 
 Identidade (FR-008): cada transação começa conferindo `current_user`; outro
 papel que não consolidado_operacao recebe `IdentidadeRecusada` antes de
@@ -54,8 +55,11 @@ from coordenador.dominio import (
     EstadoGeracao,
     FaseReconstrucao,
     Geracao,
+    IntervaloFaltante,
     Progresso,
     ReconstrucaoRecusada,
+    SaldoMaterializado,
+    TotalDoDia,
 )
 
 EXCLUSAO_UMA_ALEM_DA_ATIVA = "ex_geracao_uma_alem_da_ativa"
@@ -74,6 +78,39 @@ LEFT JOIN checkpoint c ON c.geracao_id = g.id
 LEFT JOIN fase_reconstrucao f ON f.geracao_id = g.id
 WHERE g.estado <> 'descartada'
 ORDER BY g.id
+"""
+
+# Totais por data das contribuições de uma geração; o filtro de posição é
+# acrescentado para a comparação com o relatório do livro (005-T5).
+_TOTAIS_DAS_CONTRIBUICOES = """
+SELECT data_lancamento,
+       count(*),
+       coalesce(sum(valor) FILTER (WHERE tipo = 'CREDITO'), 0),
+       coalesce(sum(valor) FILTER (WHERE tipo = 'DEBITO'), 0)
+FROM contribuicao
+WHERE geracao_id = %(geracao_id)s {filtro}
+GROUP BY data_lancamento
+ORDER BY data_lancamento
+"""
+
+# Intervalos de posições sem contribuição de 1 até P. A posição P + 1 entra
+# como sentinela para fechar o intervalo final; `lag` com padrão 0 abre o
+# inicial.
+_INTERVALOS_FALTANTES = """
+WITH posicoes AS (
+    SELECT posicao FROM contribuicao
+    WHERE geracao_id = %(geracao_id)s AND posicao <= %(ate_posicao)s
+    UNION ALL
+    SELECT %(ate_posicao)s::bigint + 1
+), vizinhas AS (
+    SELECT posicao, lag(posicao, 1, 0::bigint) OVER (ORDER BY posicao) AS anterior
+    FROM posicoes
+)
+SELECT anterior + 1, posicao - 1
+FROM vizinhas
+WHERE posicao - anterior > 1
+ORDER BY posicao
+LIMIT %(limite)s
 """
 
 
@@ -249,6 +286,69 @@ class TransacaoGeracoesPostgres:
         consumidores = tuple(self.consumidores())
         geracao_ativa_id, barreira, versao = controle
         return Situacao(geracao_ativa_id, barreira, versao, geracoes, consumidores)
+
+    def geracao_ativa(self) -> tuple[int, int]:
+        linha = self._conexao.execute(
+            "SELECT c.geracao_ativa_id, coalesce(k.posicao_continua, 0)"
+            " FROM controle_projecao c"
+            " LEFT JOIN checkpoint k ON k.geracao_id = c.geracao_ativa_id"
+            " WHERE c.id = 1"
+        ).fetchone()
+        if linha is None:
+            raise RuntimeError("controle_projecao sem linha (migração 0001)")
+        geracao_id, checkpoint = linha
+        return geracao_id, checkpoint
+
+    def totais_ate(self, geracao_id: int, ate_posicao: int) -> list[TotalDoDia]:
+        consulta = _TOTAIS_DAS_CONTRIBUICOES.format(
+            filtro="AND posicao <= %(ate_posicao)s"
+        )
+        return [
+            TotalDoDia(data, quantidade, creditos, debitos)
+            for data, quantidade, creditos, debitos in self._conexao.execute(
+                consulta, {"geracao_id": geracao_id, "ate_posicao": ate_posicao}
+            ).fetchall()
+        ]
+
+    def faltantes_ate(
+        self, geracao_id: int, ate_posicao: int, limite: int
+    ) -> tuple[int, list[IntervaloFaltante]]:
+        parametros = {
+            "geracao_id": geracao_id,
+            "ate_posicao": ate_posicao,
+            "limite": limite,
+        }
+        projetadas: int = self._um(
+            "SELECT count(*) FROM contribuicao WHERE geracao_id = %s AND posicao <= %s",
+            geracao_id,
+            ate_posicao,
+        )
+        intervalos = [
+            IntervaloFaltante(inicio, fim)
+            for inicio, fim in self._conexao.execute(
+                _INTERVALOS_FALTANTES, parametros
+            ).fetchall()
+        ]
+        return ate_posicao - projetadas, intervalos
+
+    def saldos(self, geracao_id: int) -> list[SaldoMaterializado]:
+        return [
+            SaldoMaterializado(data, creditos, debitos)
+            for data, creditos, debitos in self._conexao.execute(
+                "SELECT data, total_creditos, total_debitos FROM saldo_diario"
+                " WHERE geracao_id = %s ORDER BY data",
+                (geracao_id,),
+            ).fetchall()
+        ]
+
+    def totais_das_contribuicoes(self, geracao_id: int) -> list[SaldoMaterializado]:
+        consulta = _TOTAIS_DAS_CONTRIBUICOES.format(filtro="")
+        return [
+            SaldoMaterializado(data, creditos, debitos)
+            for data, _, creditos, debitos in self._conexao.execute(
+                consulta, {"geracao_id": geracao_id}
+            ).fetchall()
+        ]
 
     def _primeiras_lacunas(self, geracao_id: int, limite: int) -> tuple[int, ...]:
         if limite == 0:
