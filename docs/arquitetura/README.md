@@ -56,5 +56,5 @@ vem precedido de um texto alternativo que descreve o mesmo conteúdo.
   (INFRA 1.5, 6.1 a 6.7).
 
 As justificativas de cada escolha, com alternativas e trade-offs, ficam nos
-ADRs em `docs/adr/` (task 006-T3); a tabela de origem desses ADRs está em
+ADRs em [`docs/adr/`](../adr/README.md); a tabela de origem desses ADRs está em
 [01 - Contexto](01-contexto.md#decisões-que-moldam-a-arquitetura).

@@ -109,7 +109,8 @@ sem impedir a confirmação de um lançamento válido (P-001; teste
 
 ## Decisões que moldam a arquitetura
 
-Os ADRs ficam em `docs/adr/` (task 006-T3). Origem de cada um, conforme
+Os ADRs ficam em [`docs/adr/`](../adr/README.md), com o rastreio de cada
+decisão técnica aprovada para o seu ADR. Origem de cada um, conforme
 `006/design.md` §4:
 
 | ADR | Título | Origem |
