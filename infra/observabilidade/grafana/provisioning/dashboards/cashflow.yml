@@ -1,0 +1,21 @@
+# Provedor de painéis do Grafana, carregado na subida (spec 007; 007-T3;
+# design 007 §4 Provisionamento, §7; FR-002).
+#
+# Lê os painéis versionados montados em /etc/grafana/dashboards
+# (infra/observabilidade/grafana/dashboards). O Git é a fonte: alterações
+# feitas pela interface não são gravadas de volta e o painel não pode ser
+# apagado por ela.
+apiVersion: 1
+
+providers:
+  - name: cashflow
+    orgId: 1
+    folder: CashFlow
+    folderUid: cashflow
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

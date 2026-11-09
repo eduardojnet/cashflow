@@ -1,0 +1,22 @@
+# Fonte de dados do Grafana, provisionada na subida (spec 007; 007-T3;
+# design 007 §4 Provisionamento; FR-002).
+#
+# O Grafana chega ao Prometheus pela `rede-observabilidade`, interna e sem
+# rota a partir do host (007 TD-007). O uid é fixo porque o painel
+# versionado (dashboards/cashflow.json) referencia a fonte por ele.
+# `editable: false`: a fonte só muda por este arquivo, não pela interface.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus CashFlow
+    uid: prometheus-cashflow
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      # Igual ao scrape_interval de prometheus.yml, para que $__rate_interval
+      # cubra ao menos quatro coletas.
+      timeInterval: 15s
+      httpMethod: POST

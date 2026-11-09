@@ -596,7 +596,8 @@ services:
     # Visualização das métricas (spec 007; 007-T1; ST-Q-008). HTTPS com o
     # certificado da AC local, publicado só em loopback (INFRA 5.7, 6.5, 6.6).
     # Lê o Prometheus pela rede da observabilidade; a segunda rede existe só
-    # para a publicação (007 TD-007). Fonte de dados e painéis: 007-T3.
+    # para a publicação (007 TD-007). Fonte de dados e painéis provisionados
+    # de observabilidade/grafana (007-T3).
     #
     # Versão: Grafana OSS 13.3.0, última release estável em
     # https://github.com/grafana/grafana/releases (lançada em 2026-10-27);
@@ -639,6 +640,12 @@ services:
       - ./tls/gerados/ac/ac-cashflow.crt:/etc/grafana/tls/ac-cashflow.crt:ro
       - ./tls/gerados/grafana.crt:/etc/grafana/tls/grafana.crt:ro
       - ./tls/gerados/grafana.key:/etc/grafana/tls/grafana.key:ro
+      # Fonte de dados e painel CashFlow versionados, carregados na subida
+      # (007-T3; design 007 §4 Provisionamento, §7). Só os subdiretórios
+      # usados: os demais (alerting, plugins) ficam os vazios da imagem.
+      - ./observabilidade/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observabilidade/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observabilidade/grafana/dashboards:/etc/grafana/dashboards:ro
     depends_on:
       prometheus:
         condition: service_healthy
