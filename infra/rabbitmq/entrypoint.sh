@@ -27,4 +27,16 @@ chown -R rabbitmq:rabbitmq "$destino_dir"
 chmod 0700 "$destino_dir"
 chmod 0600 "$destino"
 
+# Cookie do Erlang criado aqui, antes do servidor. O health check roda
+# `rabbitmq-diagnostics` como root com HOME=/var/lib/rabbitmq: num volume novo
+# e com boot lento (contenção de CPU), o CLI criava o cookie como root antes
+# do servidor, que caía com "eacces" ao lê-lo e só subia no reinício. O
+# `docker compose up --wait` abortava nessa queda (bloqueio da 005-T6).
+cookie=/var/lib/rabbitmq/.erlang.cookie
+if [[ ! -s "$cookie" ]]; then
+	(umask 077 && od -An -N16 -tx1 /dev/urandom | tr -d ' \n' > "$cookie")
+fi
+chown rabbitmq:rabbitmq "$cookie"
+chmod 0400 "$cookie"
+
 exec docker-entrypoint.sh "$@"
