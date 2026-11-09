@@ -2,12 +2,15 @@
 #
 # Todos os alvos estão nas redes internas do compose; nenhum é publicado no
 # host (INFRA 6.1). O coordenador roda como CLI e não é alvo: a fase da
-# reconstrução sai pela API do consolidado (design 007 §4). Regras de alerta:
-# 007-T4.
+# reconstrução sai pela API do consolidado (design 007 §4).
 global:
   scrape_interval: 15s
   scrape_timeout: 10s
   evaluation_interval: 15s
+
+# Limites e alertas de FR-006 (007-T4; design 007 TD-004).
+rule_files:
+  - /etc/prometheus/regras.yml
 
 scrape_configs:
   - job_name: prometheus

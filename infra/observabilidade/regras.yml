@@ -1,0 +1,90 @@
+# Regras de alerta da solução (spec 007; 007-T4; FR-006; design 007 TD-004).
+#
+# Avaliadas pelo Prometheus e exibidas no painel CashFlow (seção Alertas) e
+# na página de alertas do Grafana. Sem notificação externa: não há fonte para
+# canal de envio (TD-004; requirements 007 Non-Goals).
+#
+# Limites configuráveis: cada limite é uma série constante gravada pelas
+# regras `cashflow:limite_*` abaixo, e cada alerta compara a métrica com o
+# seu limite. Para mudar um limite, editar o número em `vector(...)` e
+# recarregar a configuração, sem perder dados:
+#
+#   docker compose -f infra/compose.yaml kill -s SIGHUP prometheus
+#
+# As séries de limite também aparecem no painel, ao lado da métrica.
+#
+# Os limites e os alertas ficam no mesmo grupo porque as regras de um grupo
+# são avaliadas em ordem, e cada alerta lê o limite gravado na mesma
+# avaliação. Sem a série do limite, `scalar()` devolve NaN e o alerta não
+# dispara.
+groups:
+  - name: cashflow
+    rules:
+      # --- Limites (FR-006: "limite configurável"). ---
+
+      # Idade máxima, em segundos, do evento pendente mais antigo da outbox.
+      # Valor provisório (FR-006 não fixa um): acima do teto de espera do
+      # relay (RELAY_ESPERA_TETO_SEGUNDOS, 60 s) somado ao lease (30 s), para
+      # que um ciclo de retentativa numa oscilação do broker não dispare;
+      # cinco minutos sem publicar indicam relay parado ou broker fora.
+      - record: cashflow:limite_outbox_idade_mais_antigo_segundos
+        expr: vector(300)
+
+      # Eventos em quarentena tolerados (FR-006: "maior que zero").
+      - record: cashflow:limite_quarentena
+        expr: vector(0)
+
+      # Lacunas de posição toleradas por geração (FR-006: "maior que zero").
+      - record: cashflow:limite_lacunas
+        expr: vector(0)
+
+      # --- Alertas. ---
+
+      # Relay atrasado: o evento mais antigo da outbox espera há mais que o
+      # limite (INFRA 8.3; design 003 §12).
+      - alert: CashFlowOutboxEventoAntigo
+        expr: >-
+          max(cashflow_outbox_idade_mais_antigo_segundos)
+          > scalar(cashflow:limite_outbox_idade_mais_antigo_segundos)
+        labels:
+          severidade: aviso
+        annotations:
+          summary: Evento pendente na outbox acima do limite de idade
+          description: >-
+            O evento mais antigo da outbox espera há {{ $value }} s. Verificar
+            o relay e o RabbitMQ (painel CashFlow, seções Livro e outbox e
+            Mensageria).
+
+      # Mensagem ilegível ou em conflito guardada na quarentena (004 FR-003).
+      # O contador é do processo do worker: conta desde a última subida e
+      # volta a zero quando o worker reinicia. O registro permanente é a
+      # tabela `quarentena` do consolidado.
+      - alert: CashFlowQuarentena
+        expr: >-
+          sum(cashflow_quarentena_total)
+          > scalar(cashflow:limite_quarentena)
+        labels:
+          severidade: critico
+        annotations:
+          summary: Eventos na quarentena do consolidado
+          description: >-
+            {{ $value }} evento(s) foram para a quarentena desde a subida do
+            worker. Conferir a tabela `quarentena` do consolidado.
+
+      # Posição contínua do checkpoint parada antes do último evento aplicado
+      # (004 FR-009). `for` evita disparo por lacuna transitória entre
+      # commits, e numa reconstrução a candidata tem lacunas até o replay
+      # alcançar a posição corrente (005).
+      - alert: CashFlowLacunas
+        expr: >-
+          max by (geracao) (cashflow_lacunas)
+          > scalar(cashflow:limite_lacunas)
+        for: 1m
+        labels:
+          severidade: aviso
+        annotations:
+          summary: Lacunas de posição no checkpoint da geração {{ $labels.geracao }}
+          description: >-
+            A geração {{ $labels.geracao }} tem {{ $value }} lacuna(s) há mais
+            de 1 minuto. As posições em lacuna saem em `coordenador
+            reconstruir status`.

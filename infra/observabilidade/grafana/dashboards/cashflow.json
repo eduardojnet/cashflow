@@ -117,6 +117,115 @@
     },
     {
       "type": "row",
+      "id": 28,
+      "title": "Alertas",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "id": 29,
+      "title": "Alertas disparados",
+      "description": "Regras de FR-006 avaliadas pelo Prometheus (infra/observabilidade/regras.yml; design 007 TD-004): 0 = normal; 1 ou mais = alerta disparado (instâncias em firing). Detalhes na página de alertas do Grafana.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-cashflow"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-cashflow"
+          },
+          "expr": "count(ALERTS{alertname=\"CashFlowOutboxEventoAntigo\", alertstate=\"firing\"}) or vector(0)",
+          "legendFormat": "Evento antigo na outbox",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-cashflow"
+          },
+          "expr": "count(ALERTS{alertname=\"CashFlowQuarentena\", alertstate=\"firing\"}) or vector(0)",
+          "legendFormat": "Quarentena",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-cashflow"
+          },
+          "expr": "count(ALERTS{alertname=\"CashFlowLacunas\", alertstate=\"firing\"}) or vector(0)",
+          "legendFormat": "Lacunas",
+          "refId": "C",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "normal",
+                  "color": "green",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "auto"
+      }
+    },
+    {
+      "type": "row",
       "id": 3,
       "title": "Livro e outbox",
       "collapsed": false,
@@ -124,7 +233,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 5
+        "y": 10
       },
       "panels": []
     },
@@ -141,7 +250,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 6
+        "y": 11
       },
       "targets": [
         {
@@ -177,7 +286,7 @@
       "type": "timeseries",
       "id": 5,
       "title": "Idade do evento mais antigo",
-      "description": "Idade do evento pendente mais antigo da outbox (relay; INFRA 8.3).",
+      "description": "Idade do evento pendente mais antigo da outbox (relay; INFRA 8.3). A linha tracejada é o limite do alerta CashFlowOutboxEventoAntigo (infra/observabilidade/regras.yml; FR-006).",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus-cashflow"
@@ -186,7 +295,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 6
+        "y": 11
       },
       "targets": [
         {
@@ -198,13 +307,49 @@
           "legendFormat": "idade",
           "refId": "A",
           "range": true
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-cashflow"
+          },
+          "expr": "cashflow:limite_outbox_idade_mais_antigo_segundos",
+          "legendFormat": "limite do alerta",
+          "refId": "B",
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "limite do alerta"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    10,
+                    10
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "red"
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -231,7 +376,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 6
+        "y": 11
       },
       "targets": [
         {
@@ -276,7 +421,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 14
+        "y": 19
       },
       "targets": [
         {
@@ -317,7 +462,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 27
       },
       "panels": []
     },
@@ -334,7 +479,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 23
+        "y": 28
       },
       "targets": [
         {
@@ -389,7 +534,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 23
+        "y": 28
       },
       "targets": [
         {
@@ -440,7 +585,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 31
+        "y": 36
       },
       "panels": []
     },
@@ -457,7 +602,7 @@
         "h": 8,
         "w": 4,
         "x": 0,
-        "y": 32
+        "y": 37
       },
       "targets": [
         {
@@ -510,7 +655,7 @@
         "h": 8,
         "w": 4,
         "x": 4,
-        "y": 32
+        "y": 37
       },
       "targets": [
         {
@@ -572,7 +717,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 32
+        "y": 37
       },
       "targets": [
         {
@@ -617,7 +762,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 32
+        "y": 37
       },
       "targets": [
         {
@@ -658,7 +803,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 40
+        "y": 45
       },
       "panels": []
     },
@@ -675,7 +820,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 41
+        "y": 46
       },
       "targets": [
         {
@@ -783,7 +928,7 @@
         "h": 8,
         "w": 9,
         "x": 6,
-        "y": 41
+        "y": 46
       },
       "targets": [
         {
@@ -828,7 +973,7 @@
         "h": 8,
         "w": 9,
         "x": 15,
-        "y": 41
+        "y": 46
       },
       "targets": [
         {
@@ -869,7 +1014,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 49
+        "y": 54
       },
       "panels": []
     },
@@ -886,7 +1031,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 55
       },
       "targets": [
         {
@@ -931,7 +1076,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 50
+        "y": 55
       },
       "targets": [
         {
@@ -976,7 +1121,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 50
+        "y": 55
       },
       "targets": [
         {
@@ -1017,7 +1162,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 63
       },
       "panels": []
     },
@@ -1034,7 +1179,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 59
+        "y": 64
       },
       "targets": [
         {
@@ -1079,7 +1224,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 59
+        "y": 64
       },
       "targets": [
         {
@@ -1124,7 +1269,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 59
+        "y": 64
       },
       "targets": [
         {

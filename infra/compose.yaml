@@ -567,7 +567,8 @@ services:
     # Coleta das métricas de INFRA 8.3 (spec 007; 007-T1; ST-Q-008). Só lê:
     # coleta o /metrics de cada componente nas redes internas, todas sem rota
     # a partir do host, e não publica porta (007 design §3, TD-007; INFRA
-    # 6.1). Alvos em observabilidade/prometheus.yml.
+    # 6.1). Alvos em observabilidade/prometheus.yml; limites e alertas de
+    # FR-006 em observabilidade/regras.yml (007-T4).
     #
     # Versão: Prometheus 3.16.0, última release estável em
     # https://github.com/prometheus/prometheus/releases (lançada em
@@ -582,6 +583,8 @@ services:
     volumes:
       - vol-prometheus:/prometheus
       - ./observabilidade/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Limites e alertas de FR-006 (007-T4).
+      - ./observabilidade/regras.yml:/etc/prometheus/regras.yml:ro
     healthcheck:
       # Pronto = /-/ready com 200: configuração carregada e TSDB aberto
       # (007 FR-005; INFRA 8.5).
