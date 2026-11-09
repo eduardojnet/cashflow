@@ -1,7 +1,8 @@
 # Teste de carga do consolidado (004-T6)
 
 Relatório bruto da execução do teste de carga da API do consolidado. A spec
-006 (006-T6) consolida este relatório na documentação de entrega.
+006 (006-T6) consolida este relatório, com as execuções seguintes, em
+[`relatorio-carga.md`](relatorio-carga.md).
 
 ## Protocolo
 

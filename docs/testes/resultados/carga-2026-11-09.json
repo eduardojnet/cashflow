@@ -1,0 +1,22 @@
+{
+  "programadas": 15000,
+  "enviadas": 15000,
+  "sucesso": 15000,
+  "perda": 0,
+  "perda_percentual": 0,
+  "nao_enviadas_sem_token": 0,
+  "descartadas_pelo_gerador": 0,
+  "minimo_sucessos": 14250,
+  "aprovado": true,
+  "duracao_ms": {
+    "max": 68.818319,
+    "avg": 8.80174247166668,
+    "min": 1.880982,
+    "med": 8.922647,
+    "p(90)": 12.117203700000001,
+    "p(95)": 13.4871394,
+    "p(99)": 18.833090760000005,
+    "p(99.9)": 36.57525005400032
+  },
+  "vus_max": 50
+}
