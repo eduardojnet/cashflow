@@ -251,7 +251,9 @@ Registrar um lançamento. `tipo` é `CREDITO` ou `DEBITO`; `valor` é positivo,
 em reais, com até duas casas; `data_lancamento` é o dia, no formato
 `AAAA-MM-DD`; `descricao` é opcional. `Idempotency-Key` é obrigatório:
 repetir a chave com o mesmo corpo devolve a mesma resposta sem criar outro
-lançamento, e com outro corpo devolve 409.
+lançamento, e com outro corpo devolve 409. Data passada é aceita: o
+lançamento retroativo muda o saldo daquele dia e o acumulado dos dias
+seguintes (decisão 002/D-005, em [`docs/requisitos.md`](docs/requisitos.md)).
 
 ```bash
 curl -sS --cacert "$AC" -X POST https://localhost:8444/v1/lancamentos \
@@ -413,6 +415,26 @@ $COMPOSE run --rm coordenador geracao descartar
 $COMPOSE run --rm coordenador reconstruir cancelar
 ```
 
+**Se o coordenador cair no meio da troca ou do rollback** (processo morto,
+máquina reiniciada, conexão perdida), a barreira fica erguida e os workers
+seguem pausados, devolvendo cada mensagem à fila. Nenhum alerta cobre esse
+caso ([lacunas](docs/evolucoes.md#lacunas-conhecidas-da-implementação)).
+Os sinais são o checkpoint parado e a fila crescendo no painel, e o status
+mostra `barreira solicitada`:
+
+```bash
+$COMPOSE run --rm coordenador reconstruir status   # "(barreira solicitada, ...)"
+
+# Repita a operação interrompida. Ela assume a barreira herdada (avisa no
+# log) e a libera ao terminar, aceita ou recusada.
+$COMPOSE run --rm coordenador geracao trocar     # se caiu na troca
+$COMPOSE run --rm coordenador geracao rollback   # se caiu no rollback
+```
+
+A troca é uma transação: se o processo morreu antes do commit, o ponteiro
+não mudou e a candidata segue `construindo`. Confira com o status antes de
+escolher o comando.
+
 Códigos de saída do coordenador: 0 sucesso, 1 operação recusada ou falha do
 banco, 2 uso inválido, 3 reconciliação com divergência. A sequência completa
 (perda do broker, reconciliação, reconstrução, troca e nova reconciliação) é
@@ -469,9 +491,14 @@ avaliador precisa foi transcrito para `docs/`.
   1000 antes do passo 5 (`sudo chown 1000:1000 infra/tls/gerados/*.key`).
   `[NVI]`: não testado com outro UID.
 - **macOS e Windows** não foram testados (decisão de Eduardo, 001/Q-001).
-- **Lint e tipos** (Ruff e mypy) rodam como ferramentas avulsas (`uvx ruff
-  check .`, `uv run --with mypy mypy`), sem script único de verificação
-  ([ADR-009](docs/adr/ADR-009-stack-python.md)).
+- **Sem script único de verificação:** lint, tipos e testes rodam por
+  comandos separados ([ADR-009](docs/adr/ADR-009-stack-python.md)).
+- **Achados das revisões ainda abertos**, todos de baixa severidade e sem
+  perda de dado: limite de tamanho do corpo do lançamento, mensagem que
+  falha sempre no worker, quarentena repetida em reentrega, alertas que
+  dependem do próprio produtor da métrica, entre outros. A lista completa,
+  com o que já foi corrigido, está em
+  [`docs/evolucoes.md`](docs/evolucoes.md#lacunas-conhecidas-da-implementação).
 - **Publicação no GitHub** é a etapa final (006-T8).
 - Demais lacunas e o que ficou fora do escopo:
   [`docs/evolucoes.md`](docs/evolucoes.md).

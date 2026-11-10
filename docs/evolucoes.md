@@ -82,13 +82,35 @@ Itens fora desta entrega por decisão registrada ou por gatilho de ADR.
 
 ## Lacunas conhecidas da implementação
 
-O que foi especificado e não foi entregue, registrado para não ser
-apresentado como implementado:
+O que foi especificado e não foi entregue, ou que as revisões de cada spec
+apontaram e segue aberto, registrado para não ser apresentado como
+implementado. Cada spec passou por uma revisão contra requisitos, desenho e
+código, com testes executados de novo, em 2026-11-09. As sete terminaram
+"aprovada com pendências". Os achados de severidade média foram corrigidos
+em 2026-11-10 (lista no fim desta seção). Os abertos são todos de baixa
+severidade.
 
-| Lacuna | Onde está registrada |
-|--------|----------------------|
-| Script único de verificação (`scripts/verificar.sh`), previsto no steering, não existe; lint, tipos e testes rodam por comandos separados | [ADR-009](adr/ADR-009-stack-python.md) |
-| O relay não expõe `cashflow_pool_conexoes`, embora o mapa de métricas da spec 007 o liste | [`observabilidade.md`](observabilidade.md#métricas-de-infra-83) |
+| Lacuna aberta | Efeito | Origem |
+|---------------|--------|--------|
+| Script único de verificação (`scripts/verificar.sh`), previsto no steering, não existe | Lint, tipos e testes rodam por comandos separados | [ADR-009](adr/ADR-009-stack-python.md); revisões 002 e 007 |
+| Sem limite de tamanho do corpo da requisição nem de `descricao` no registro de lançamento | Um cliente com token válido pode enviar corpos de vários megabytes, lidos em memória e gravados para sempre no livro imutável; a autenticação vem antes da leitura do corpo. O tamanho máximo é decisão de negócio pendente; caberia um limite no adaptador HTTP sem mudar o contrato | Revisão 002 |
+| Falha do banco que se repete a cada tentativa de aplicar uma mensagem (por exemplo, `posicao` acima do teto de `bigint`, que o domínio não valida) devolve a mensagem à fila sem fim | A projeção das mensagens seguintes para, sem perda; aparece nas reentregas e no checkpoint parado. Caberia validar o teto no domínio e mandar à quarentena. `[NVI]`: por leitura do código, não reproduzido | Revisão 004 |
+| Reentrega de mensagem já quarentenada (ACK perdido depois do commit) grava outra linha na quarentena | A contagem e a triagem da quarentena ficam infladas; nada se perde e o saldo não muda. Caberia deduplicar pelo hash do conteúdo. `[NVI]`: por leitura do código | Revisão 004 |
+| A idade do evento mais antigo é medida só na outbox, não na fila do consolidado | O atraso da fila aparece em mensagens prontas e em posições (checkpoint), não em segundos | Revisão 004 |
+| Barreira deixada por um coordenador que caiu no meio da troca ou do rollback não tem alerta | O consumo fica pausado até a operação ser repetida; a conduta está no [runbook](../README.md#runbook-reconstrução-do-consolidado). `[NVI]`: a queda no meio do protocolo não foi reproduzida; a retomada da barreira herdada tem teste | Revisão 005 |
+| O espaço em disco com duas gerações não foi medido, e o descarte (DELETE) não devolve espaço ao sistema de arquivos sem VACUUM | Com o volume do desafio o risco é desprezível; em volume real, a folga de disco para a reconstrução não está conferida (INFRA 7.5) | Revisão 005 |
+| Os alertas dependem do próprio produtor da métrica (sem regra para alvo fora do ar), e o de quarentena se apaga com o reinício do worker | Com o relay ou o worker parado, a série some e o alerta não dispara; o alvo fora do ar aparece só no painel. A quarentena segue na tabela depois do reinício. `[NVI]`: análise das expressões | Revisão 007 |
+| Publicação das APIs só em loopback é conferida à mão; o teste automatizado cobre só o Keycloak | Uma mudança de porta no compose pode expor uma API sem teste que falhe | Revisão 001 |
+| O health check do PostgreSQL (`pg_isready` sem `-h`) pode dar saudável durante a inicialização do volume, pelo socket do servidor temporário | Na criação do volume, um dependente que usa TCP pode receber recusa de conexão. As APIs se recuperam pela readiness; os serviços de migração não têm retentativa. Não reproduzido | Revisão 001 |
+
+Corrigido em 2026-11-10, depois das revisões (severidade média):
+
+| Achado | Correção |
+|--------|----------|
+| Lint não reproduzível: Ruff sem versão fixada (9 erros e 8 arquivos a formatar com a versão do dia) e mypy falhando nos testes, que importavam auxiliares por `sys.path` | Ruff e mypy fixados no grupo `dev`, com `[tool.ruff]` e `[tool.mypy]`; testes importam pelo caminho do pacote; `uv run ruff check .` e `uv run mypy` sem erro ([ADR-009](adr/ADR-009-stack-python.md)) |
+| O relay seguia publicando o lote depois de vencer o próprio lease, e duas execuções podiam publicar o mesmo evento ao mesmo tempo | Antes de cada evento, o ciclo confere pelo relógio monotônico se o lease comporta uma publicação inteira com margem; a publicação em curso não passa do lease; lease menor que o prazo de confirmação impede a subida ([ADR-003](adr/ADR-003-outbox-transacional-e-relay.md)) |
+| O relay não expunha `cashflow_pool_conexoes` | Registrado no relay, pela mesma função das APIs e do worker ([`observabilidade.md`](observabilidade.md#métricas-de-infra-83)) |
+| `cashflow_geracao_ativa` valia 0 depois de cada subida até a primeira consulta | A API lê `controle_projecao` a cada 10 s; o teste de cobertura exige o valor igual ao do banco ([`observabilidade.md`](observabilidade.md#métricas-de-infra-83)) |
 
 ## Transição de um legado
 
