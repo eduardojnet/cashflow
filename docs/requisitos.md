@@ -1,11 +1,11 @@
 # Requisitos funcionais e não funcionais refinados
 
-Refinamento exigido em DES - Requisitos obrigatórios ("Refinamento do
-Levantamento de requisitos funcionais e não funcionais"). Conteúdo transcrito
-dos `requirements.md` aprovados por Eduardo em 2026-11-05 nas specs 001 a 005
-e 007. As specs ficam em `.ai/sdd/specs/`, pasta local que não é versionada
-(decisão 006 D-006); por isso o texto foi trazido para cá, e cada seção abaixo
-corresponde a uma spec.
+Aqui apresento o refinamento que DES exige em Requisitos obrigatórios
+("Refinamento do Levantamento de requisitos funcionais e não funcionais").
+Transcrevi o conteúdo dos `requirements.md` que aprovei em 2026-11-05 nas
+specs 001 a 005 e 007. Mantenho as specs em `.ai/sdd/specs/`, pasta local que
+não versiono (decisão 006 D-006); por isso trouxe o texto para cá, e cada
+seção abaixo corresponde a uma spec.
 
 Fontes:
 
@@ -17,11 +17,17 @@ Convenções:
 - O identificador de cada requisito é `<spec>/<id>`, por exemplo `002/FR-004`
   é o FR-004 da spec 002. Decisões seguem o mesmo padrão (`004/D-006`).
 - Prioridade MoSCoW: Must Have, Should Have, Could Have.
-- Requisitos funcionais em EARS (WHEN / IF / THE SYSTEM SHALL), condensados
-  em uma frase.
-- Origem: "Fonte" = DES ou INFRA; "Eduardo" = decisão do autor com data;
-  "Inferência" = dedução direta de uma fonte; "Proposta" = não consta nas
-  fontes e foi aprovada junto com a spec; `[NVI]` = não verificado.
+- Escrevi os requisitos funcionais em EARS (WHEN / IF / THE SYSTEM SHALL),
+  condensados em uma frase; por isso eles falam do sistema, não de mim.
+- Origem: "Fonte" = DES ou INFRA; "decisão minha" = decisão que tomei, com
+  data, ao responder uma questão aberta da spec (`Q-xxx`); "Inferência" =
+  dedução direta de uma fonte; "Proposta" = não consta nas fontes e aprovei
+  junto com a spec; `[NVI]` = não verificado.
+- Nas tabelas de decisão, a coluna Origem diz de onde a decisão veio. Quando
+  a decisão vem de uma fonte, a razão é a própria fonte. Quando é minha, as
+  razões técnicas e as alternativas que rejeitei estão no ADR
+  correspondente ([`adr/`](adr/README.md)); nas decisões de negócio sem ADR,
+  registro aqui o motivo quando o anotei na spec.
 
 Domínios e capacidades que estes requisitos atendem:
 [`dominios-capacidades.md`](dominios-capacidades.md).
@@ -37,7 +43,8 @@ Domínios e capacidades que estes requisitos atendem:
 | [005](#spec-005-reconstrução-da-projeção-coordenador-operacional) | Reconstrução da projeção (coordenador operacional) | FR-001 a FR-009; NFR-001 a NFR-003 | `.ai/sdd/specs/005-reconstrucao-projecao/requirements.md` |
 | [007](#spec-007-observabilidade-com-métricas) | Observabilidade com métricas | FR-001 a FR-006; NFR-001 a NFR-002 | `.ai/sdd/specs/007-observabilidade-metricas/requirements.md` |
 
-A spec 006 trata desta própria documentação e não tem requisitos de produto.
+A spec 006 trata desta própria documentação e, por isso, não tem requisitos
+de produto.
 
 ## Do enunciado aos requisitos refinados
 
@@ -75,29 +82,31 @@ local, Fora do escopo; DES - Requisitos obrigatórios.
 
 ### Requisitos não funcionais
 
-- **001/NFR-001 Capacidade local:** configuração verificada no teste de
+- **001/NFR-001 Capacidade local:** configuração que verifiquei no teste de
   carga de 2026-11-06: 12 CPUs lógicas (Intel Core i7-1355U), 16 GB de RAM,
   23,7 GiB de disco livre, Linux com Docker Engine 29.9.2 e Compose v5.6.1
   ([recursos da máquina](testes/carga-consolidado.md#recursos-da-máquina)).
   Nessa máquina a solução completa subiu e atendeu a carga de INFRA 9.4. É a
-  configuração verificada, não um mínimo: nenhuma máquina menor foi testada.
-  Substitui a baseline provisória de INFRA (4 a 8 vCPUs, 16 GB de RAM, 30 GB
-  livres; decisão de Eduardo, 2026-11-10). Não medidos: espaço para duas
-  gerações do consolidado e relógio sincronizado `[NVI]`.
+  configuração verificada, não um mínimo: não testei máquina menor. Decidi
+  em 2026-11-10 substituir por ela a baseline provisória de INFRA (4 a 8
+  vCPUs, 16 GB de RAM, 30 GB livres), porque um valor medido vale mais que
+  um provisório. Não medi o espaço para duas gerações do consolidado nem o
+  relógio sincronizado `[NVI]`.
 - **001/NFR-002 Segurança e privacidade:** coberto por 001/FR-004 a
   001/FR-008.
 - **001/NFR-003 Usabilidade:** instruções de execução claras no README (DES).
 
 ### Restrições e decisões
 
-- Sem Kubernetes, nuvem ou clusters (INFRA - Fora do escopo). Keycloak deve
-  ser substituível (INFRA 5.1).
+- Sem Kubernetes, nuvem ou clusters (INFRA - Fora do escopo). O Keycloak
+  precisa ser substituível (INFRA 5.1); por isso a validação de token só
+  depende de JWKS e claims padrão.
 
 | ID | Decisão | Origem |
 |----|---------|--------|
 | 001/D-001 | Sem API Gateway, RBAC ou ABAC: autorização apenas por escopo validado em cada API. | INFRA 5.12 |
 | 001/D-002 | Sem metas numéricas de RPO, RTO, retenção e backup: documentadas como pendentes, sem política numérica implementada. | INFRA 7.7; Fora do escopo |
-| 001/D-003 | Linux suportado e testado; o README avisa que macOS e Windows podem funcionar via Docker Desktop, sem garantia. | Eduardo, 2026-11-05 (001/Q-001) |
+| 001/D-003 | Linux suportado e testado; o README avisa que macOS e Windows podem funcionar via Docker Desktop, sem garantia. Concentrei a verificação em Linux, que é o ambiente de INFRA 1.1. | Decisão minha, 2026-11-05 (001/Q-001) |
 
 Fora do escopo: Kubernetes, nuvem, alta disponibilidade, clusters,
 balanceador, autoscaling, API Gateway (INFRA - Fora do escopo); RBAC e ABAC
@@ -109,7 +118,7 @@ Serviço que registra lançamentos de débito e crédito do comerciante, de form
 imutável e idempotente, permanece disponível mesmo com o consolidado ou o
 RabbitMQ fora do ar, e lista os lançamentos por intervalo de datas. Fonte:
 DES - Descritivo, Requisitos de negócio, RNF; INFRA 2.1, 3.1, 5.4, 5.5, 8.2,
-8.3, 9.6; decisões de Eduardo em 2026-11-05.
+8.3, 9.6; decisões minhas de 2026-11-05.
 
 ### Requisitos funcionais
 
@@ -146,12 +155,12 @@ DES - Descritivo, Requisitos de negócio, RNF; INFRA 2.1, 3.1, 5.4, 5.5, 8.2,
 
 | ID | Decisão | Origem |
 |----|---------|--------|
-| 002/D-001 | Campos do lançamento: tipo (débito ou crédito), valor, data do lançamento e descrição opcional; sem categoria. | Eduardo, 2026-11-05 (002/Q-002) |
-| 002/D-002 | Listagem por intervalo de datas, paginada, com o escopo `lancamentos:consultar`, adicional aos escopos de INFRA 5.4. | Eduardo, 2026-11-05 (002/Q-001) |
-| 002/D-003 | Sem estorno vinculado; o erro é corrigido com novo lançamento de tipo contrário. | Eduardo, 2026-11-05 (002/Q-003) |
-| 002/D-004 | Moeda BRL, duas casas decimais, valor positivo; o tipo define o sinal. | Eduardo, 2026-11-05 (002/Q-004) |
-| 002/D-005 | Dia = data informada no lançamento, fuso America/Sao_Paulo; lançamento retroativo é permitido e pode alterar o saldo de dias passados. | Eduardo, 2026-11-05 (002/Q-005) |
-| 002/D-006 | Mesma chave de idempotência com conteúdo diferente é rejeitada como conflito. | Eduardo, 2026-11-05 (002/Q-006) |
+| 002/D-001 | Campos do lançamento: tipo (débito ou crédito), valor, data do lançamento e descrição opcional; sem categoria. | Decisão minha, 2026-11-05 (002/Q-002) |
+| 002/D-002 | Listagem por intervalo de datas, paginada, com o escopo `lancamentos:consultar`, adicional aos escopos de INFRA 5.4. Incluí a listagem porque, sem ela, o comerciante não consegue conferir o que lançou ([ADR-013](adr/ADR-013-escopo-lancamentos-consultar.md)). | Decisão minha, 2026-11-05 (002/Q-001) |
+| 002/D-003 | Sem estorno vinculado; o erro é corrigido com novo lançamento de tipo contrário. | Decisão minha, 2026-11-05 (002/Q-003) |
+| 002/D-004 | Moeda BRL, duas casas decimais, valor positivo; o tipo define o sinal. | Decisão minha, 2026-11-05 (002/Q-004) |
+| 002/D-005 | Dia = data informada no lançamento, fuso America/Sao_Paulo; lançamento retroativo é permitido e pode alterar o saldo de dias passados. | Decisão minha, 2026-11-05 (002/Q-005) |
+| 002/D-006 | Mesma chave de idempotência com conteúdo diferente é rejeitada como conflito. | Decisão minha, 2026-11-05 (002/Q-006) |
 
 Fora do escopo: alteração ou exclusão de lançamento (INFRA 3.1); estorno
 vinculado (002/D-003); multimoeda e categoria (002/D-001, 002/D-004);
@@ -192,12 +201,12 @@ Fonte: INFRA 2.2, 3.1, 4.3 a 4.7, 4.10, 4.11, 7.2, 7.6, 8.3, 8.4, 9.2, 9.6.
 | ID | Decisão | Origem |
 |----|---------|--------|
 | 003/D-001 | Eventos publicados não são apagados da outbox, para permitir replay e reconstrução. | INFRA 7.2, 7.3 |
-| 003/D-002 | Retentativa sem limite de tentativas, com espera crescente até um teto configurável; alerta pela idade do evento mais antigo. | Eduardo, 2026-11-05 (003/Q-001) |
-| 003/D-003 | O relay não garante ordem; o consolidado soma contribuições e detecta lacunas pela posição. | Eduardo, 2026-11-05 (003/Q-002) |
+| 003/D-002 | Retentativa sem limite de tentativas, com espera crescente até um teto configurável; alerta pela idade do evento mais antigo. Não limitei as tentativas porque INFRA 4.10 não admite descarte silencioso. | Decisão minha, 2026-11-05 (003/Q-001) |
+| 003/D-003 | O relay não garante ordem; o consolidado soma contribuições e detecta lacunas pela posição. Como a soma não depende da ordem, o resultado não muda. | Decisão minha, 2026-11-05 (003/Q-002) |
 
 Fora do escopo: cluster RabbitMQ (INFRA - Fora do escopo); entrega
-exatamente uma vez no broker, pois a deduplicação é do consumidor (INFRA
-2.4).
+exatamente uma vez no broker, que deixei de fora porque a deduplicação é do
+consumidor (INFRA 2.4).
 
 ## Spec 004: consolidado diário
 
@@ -205,7 +214,7 @@ Consumidor que projeta cada lançamento no saldo do dia correspondente, sem
 duplicar nem descartar, e API que disponibiliza o saldo diário consolidado,
 por data ou por intervalo, e o sinal de inclusão de um lançamento. Fonte:
 DES - Descritivo, Requisitos de negócio, RNF; INFRA 2.3, 2.4, 3.2, 4.8 a
-4.10, 5.4, 8.3, 9.4, 9.6; decisões de Eduardo em 2026-11-05.
+4.10, 5.4, 8.3, 9.4, 9.6; decisões minhas de 2026-11-05.
 
 ### Requisitos funcionais
 
@@ -246,14 +255,14 @@ DES - Descritivo, Requisitos de negócio, RNF; INFRA 2.3, 2.4, 3.2, 4.8 a
 
 | ID | Decisão | Origem |
 |----|---------|--------|
-| 004/D-001 | Conteúdo do saldo: total de créditos, total de débitos, saldo do dia e saldo acumulado até a data. | Eduardo, 2026-11-05 (004/Q-001) |
-| 004/D-002 | Além da consulta por data, consulta por intervalo sem tamanho máximo, com paginação. | Eduardo, 2026-11-05 (004/Q-003) |
+| 004/D-001 | Conteúdo do saldo: total de créditos, total de débitos, saldo do dia e saldo acumulado até a data. | Decisão minha, 2026-11-05 (004/Q-001) |
+| 004/D-002 | Além da consulta por data, consulta por intervalo sem tamanho máximo, com paginação. | Decisão minha, 2026-11-05 (004/Q-003) |
 | 004/D-003 | Dia do lançamento segue 002/D-005: data informada, fuso America/Sao_Paulo. | 004/Q-002 |
-| 004/D-004 | Sem SLA de defasagem; visibilidade pelo sinal de inclusão, pelo checkpoint e pela idade do evento mais antigo. | Eduardo, 2026-11-05 (004/Q-004) |
-| 004/D-005 | A resposta de saldo informa o checkpoint da geração ativa. | Eduardo, 2026-11-05 (004/Q-005) |
-| 004/D-006 | Consulta por data sem lançamentos consolidados responde "não encontrado". | Eduardo, 2026-11-05 (004/Q-006) |
-| 004/D-007 | No intervalo, dias sem lançamentos não aparecem; intervalo vazio retorna lista vazia. | Eduardo, 2026-11-05 (004/Q-007) |
-| 004/D-008 | Quarentena persistida no banco do consolidado. | INFRA 3.2, 4.9 |
+| 004/D-004 | Sem SLA de defasagem; visibilidade pelo sinal de inclusão, pelo checkpoint e pela idade do evento mais antigo. | Decisão minha, 2026-11-05 (004/Q-004) |
+| 004/D-005 | A resposta de saldo informa o checkpoint da geração ativa. | Decisão minha, 2026-11-05 (004/Q-005) |
+| 004/D-006 | Consulta por data sem lançamentos consolidados responde "não encontrado". | Decisão minha, 2026-11-05 (004/Q-006) |
+| 004/D-007 | No intervalo, dias sem lançamentos não aparecem; intervalo vazio retorna lista vazia. | Decisão minha, 2026-11-05 (004/Q-007) |
+| 004/D-008 | Quarentena persistida no banco do consolidado, na mesma transação da projeção, para que a mensagem só seja confirmada depois de registrada ([ADR-005](adr/ADR-005-inbox-deduplicacao-quarentena.md)). | INFRA 3.2, 4.9 |
 
 Fora do escopo: reconstrução e troca de geração (spec 005); cache, se o
 teste de carga não exigir; meta numérica de defasagem (004/D-004);
@@ -297,12 +306,12 @@ reversível, sem interromper consultas. Fonte: DES - Resiliência; INFRA 2.5,
 | ID | Decisão | Origem |
 |----|---------|--------|
 | 005/D-001 | A fonte da reconstrução é o livro via outbox, nunca o histórico do RabbitMQ. | INFRA 4.11, 7.2, 7.6 |
-| 005/D-002 | Comando restrito no lado do livro reabre a outbox; o relay republica; o worker aplica na geração candidata. A reconciliação compara o relatório de totais exportado pelo lado do livro com o da projeção. | Eduardo, 2026-11-05 (005/Q-001) |
-| 005/D-003 | Reconstrução disparada manualmente pelo operador. | Eduardo, 2026-11-05 (005/Q-002) |
-| 005/D-004 | A reconciliação não corrige; a correção é feita por reconstrução. | Eduardo, 2026-11-05 (005/Q-003) |
-| 005/D-005 | Após a troca, a geração anterior fica disponível para rollback até o operador descartá-la; nova reconstrução exige o descarte antes. | Eduardo, 2026-11-05 (005/Q-004) |
-| 005/D-006 | Candidata aceita se estiver sem lacunas e com checkpoint maior ou igual ao da ativa no momento da barreira. | Eduardo, 2026-11-05 (005/Q-005) |
-| 005/D-007 | O coordenador operacional faz parte do MVP. | Eduardo, 2026-11-05 (PD-001) |
+| 005/D-002 | Comando restrito no lado do livro reabre a outbox; o relay republica; o worker aplica na geração candidata. A reconciliação compara o relatório de totais exportado pelo lado do livro com o da projeção. | Decisão minha, 2026-11-05 (005/Q-001) |
+| 005/D-003 | Reconstrução disparada manualmente pelo operador. | Decisão minha, 2026-11-05 (005/Q-002) |
+| 005/D-004 | A reconciliação não corrige; a correção é feita por reconstrução, que refaz a projeção inteira a partir do livro em vez de remendá-la. | Decisão minha, 2026-11-05 (005/Q-003) |
+| 005/D-005 | Após a troca, a geração anterior fica disponível para rollback até o operador descartá-la; nova reconstrução exige o descarte antes, porque INFRA 7.5 dimensiona espaço para duas gerações. | Decisão minha, 2026-11-05 (005/Q-004) |
+| 005/D-006 | Candidata aceita se estiver sem lacunas e com checkpoint maior ou igual ao da ativa no momento da barreira. | Decisão minha, 2026-11-05 (005/Q-005) |
+| 005/D-007 | O coordenador operacional faz parte do MVP. | Decisão minha, 2026-11-05 (PD-001) |
 
 Fora do escopo: disaster recovery produtivo; RPO e RTO numéricos (INFRA -
 Fora do escopo); acesso direto do consolidado ao banco do livro (INFRA 6.7).
@@ -312,7 +321,7 @@ Fora do escopo); acesso direto do consolidado ao banco do livro (INFRA 6.7).
 Coleta das métricas de INFRA 8.3 de todos os componentes e exibição em
 painéis, para o operador e o avaliador verem a saúde da solução. Fonte: DES -
 Resiliência ("monitoramento proativo"), Diferenciais ("Monitoramento e
-Observabilidade"); INFRA 8.2, 8.3, 8.4, 8.6; decisão de Eduardo em 2026-11-05
+Observabilidade"); INFRA 8.2, 8.3, 8.4, 8.6; decisão minha de 2026-11-05
 (ST-Q-008).
 
 ### Requisitos funcionais
@@ -329,7 +338,7 @@ Observabilidade"); INFRA 8.2, 8.3, 8.4, 8.6; decisão de Eduardo em 2026-11-05
 ### Requisitos não funcionais
 
 - **007/NFR-001 Desempenho:** a coleta não pode afetar a meta de 50 req/s do
-  consolidado; verificado no teste de carga com a coleta ativa (004-T6).
+  consolidado; verifiquei no teste de carga com a coleta ativa (004-T6).
 - **007/NFR-002 Segurança:** coberto por 007/FR-003 e 007/FR-004.
 
 ### Restrições e decisões
@@ -338,8 +347,8 @@ Observabilidade"); INFRA 8.2, 8.3, 8.4, 8.6; decisão de Eduardo em 2026-11-05
 
 | ID | Decisão | Origem |
 |----|---------|--------|
-| 007/D-001 | Prometheus como backend de métricas e Grafana como visualização, na Phase 1. | Eduardo, 2026-11-05 (ST-Q-008) |
+| 007/D-001 | Prometheus como backend de métricas e Grafana como visualização, na Phase 1 ([ADR-012](adr/ADR-012-prometheus-grafana.md)). | Decisão minha, 2026-11-05 (ST-Q-008) |
 
 Fora do escopo: tracing distribuído (não consta nas fontes); notificação
-externa de alertas (e-mail, chat); alta disponibilidade do Prometheus ou do
-Grafana (INFRA - Fora do escopo).
+externa de alertas (e-mail, chat), porque nenhuma fonte define o canal;
+alta disponibilidade do Prometheus ou do Grafana (INFRA - Fora do escopo).

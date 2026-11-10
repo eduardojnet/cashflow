@@ -1,16 +1,17 @@
 # Domínios funcionais e capacidades de negócio
 
-Mapeamento exigido em DES - Requisitos obrigatórios ("Mapeamento de domínios
-funcionais e capacidades de negócio"). Conteúdo transcrito do steering de
-produto do projeto (artefato SDD local, não versionado: decisão 006 D-006).
+Aqui apresento o mapeamento que DES exige em Requisitos obrigatórios
+("Mapeamento de domínios funcionais e capacidades de negócio"). Transcrevi o
+conteúdo do steering de produto do projeto, um artefato local que não
+versiono (decisão 006 D-006).
 
 Fontes:
 
 - DES = [`Desafio_Arquiteto_Soluções.md`](../Desafio_Arquiteto_Solu%C3%A7%C3%B5es.md)
 - INFRA = [`Requisitos_de_Infraestrutura.md`](../Requisitos_de_Infraestrutura.md)
 
-Legenda de origem: "Inferência" = dedução direta de uma fonte; "Eduardo" =
-decisão do autor registrada com data; `[NVI]` = não verificado.
+Legenda de origem: "Inferência" = dedução direta de uma fonte; "decisão
+minha" = decisão que tomei, registrada com data; `[NVI]` = não verificado.
 
 ## Problema
 
@@ -23,8 +24,11 @@ decisão do autor registrada com data; `[NVI]` = não verificado.
 
 ## Domínios e capacidades
 
-Fonte: DES - Requisitos de negócio; INFRA §2. Classificação
-Núcleo/Suporte/Genérico: inferência.
+Fonte: DES - Requisitos de negócio; INFRA §2. A classificação
+Núcleo/Suporte/Genérico é inferência minha: chamei de núcleo os dois domínios
+que DES descreve como o negócio, de suporte a operação que só existe para
+mantê-los corretos, e de genérico a identidade, que qualquer provedor
+padrão atende.
 
 | Domínio | Classificação | Capacidades | Componentes (INFRA §2) |
 |---------|---------------|-------------|------------------------|
@@ -39,7 +43,7 @@ Onde cada componente está no repositório:
 |------------|-------|
 | Serviço de lançamentos | `services/lancamentos/` |
 | Relay da outbox | `services/relay/` |
-| Worker consumidor | `services/worker/` |
+| Worker consumidor | `services/consolidado/worker/` (mesma imagem da API do consolidado) |
 | Serviço de consolidado | `services/consolidado/` |
 | Coordenador operacional | `services/coordenador/` |
 | Validação JWT nas APIs | `packages/seguranca/` |
@@ -54,39 +58,41 @@ projeção na spec 005, identidade e acesso na spec 001.
 | Persona | Quem é | Necessidades | Fonte |
 |---------|--------|--------------|-------|
 | Comerciante | Dono do fluxo de caixa | Registrar lançamentos; consultar saldo diário consolidado | DES |
-| Cliente técnico | Sistema que consome as APIs, autenticado por OAuth 2.0 Client Credentials | Escopos mínimos `lancamentos:registrar` e `consolidado:consultar` (INFRA 5.4) e `lancamentos:consultar` | INFRA 5.2, 5.4; Eduardo (002/Q-001) |
+| Cliente técnico | Sistema que consome as APIs, autenticado por OAuth 2.0 Client Credentials | Escopos mínimos `lancamentos:registrar` e `consolidado:consultar` (INFRA 5.4) e `lancamentos:consultar` | INFRA 5.2, 5.4; decisão minha (002/Q-001) |
 | Operador | Responsável por reconciliação, reconstrução de projeções e controle de gerações | Interfaces de replay e reconstrução com acesso restrito | INFRA 2.5, 6.4 |
 | Avaliador do desafio | Banca que avalia a entrega | Requisitos obrigatórios atendidos, README claro, repositório público e documentação no repositório | DES |
 
-Dores e alternativas atuais do comerciante não são descritas nas fontes
-`[NVI]`. O avaliador usa Linux como ambiente suportado; macOS e Windows
-recebem aviso no README, sem garantia (Eduardo, 001/Q-001).
+As fontes não descrevem as dores nem as alternativas atuais do comerciante,
+e não as inventei `[NVI]`. Tomei Linux como o ambiente do avaliador; macOS e
+Windows recebem aviso no README, sem garantia (decisão minha, 001/Q-001).
 
 ## Casos de uso principais
 
 | Caso de uso | Persona principal | Valor | Fonte |
 |-------------|-------------------|-------|-------|
 | Registrar lançamento de débito ou crédito | Cliente técnico (pelo comerciante) | Controle de caixa | DES; INFRA 2.1 |
-| Listar lançamentos por intervalo de datas | Cliente técnico (pelo comerciante) | Controle de lançamentos | DES; Eduardo (002/Q-001) |
-| Consultar saldo diário consolidado (data ou intervalo) | Cliente técnico (pelo comerciante) | Relatório diário | DES; INFRA 2.3; Eduardo (004/Q-003) |
+| Listar lançamentos por intervalo de datas | Cliente técnico (pelo comerciante) | Controle de lançamentos | DES; decisão minha (002/Q-001) |
+| Consultar saldo diário consolidado (data ou intervalo) | Cliente técnico (pelo comerciante) | Relatório diário | DES; INFRA 2.3; decisão minha (004/Q-003) |
 | Consultar se um lançamento já está no consolidado | Cliente técnico | Transparência da consistência eventual | INFRA 2.3 ("sinal de inclusão") |
 | Reconciliar e reconstruir o consolidado | Operador | Recuperação de falhas | INFRA 2.5, 7.6 |
 
 ## Proposta de valor
 
-Registro de lançamentos que continua disponível com o consolidado fora do ar,
-saldo consolidado reconstruível a partir do livro e nenhum descarte
-silencioso de evento financeiro (DES - RNF; INFRA 2.1, 4.10, 4.11, 7.2).
+O que ofereço ao comerciante: registro de lançamentos que continua
+disponível com o consolidado fora do ar, saldo consolidado reconstruível a
+partir do livro e nenhum descarte silencioso de evento financeiro (DES - RNF;
+INFRA 2.1, 4.10, 4.11, 7.2).
 
 ## Fronteiras do produto
 
-Dentro do escopo:
+O que pus dentro do escopo:
 
 - Serviço de controle de lançamentos e serviço de consolidado diário (DES).
 - Componentes executáveis de INFRA §2.
 - Documentação, testes e README exigidos em DES - Requisitos obrigatórios.
 
-Fora do escopo (INFRA - Fora do escopo atual; INFRA 5.12):
+O que deixei fora, porque INFRA assim define (INFRA - Fora do escopo atual;
+INFRA 5.12):
 
 - Kubernetes; alta disponibilidade produtiva; múltiplas zonas ou regiões;
   balanceador de carga; API Gateway; infraestrutura em nuvem; multiempresa;
@@ -99,7 +105,7 @@ Fora do escopo (INFRA - Fora do escopo atual; INFRA 5.12):
 | Métrica | Meta / sinal | Fonte |
 |---------|--------------|-------|
 | Disponibilidade de lançamentos com consolidado fora | Serviço de lançamentos continua confirmando lançamentos válidos | DES - RNF |
-| Perda no consolidado em pico | Até 5% a 50 req/s. Protocolo: 15.000 consultas em 300 s; aprovado se pelo menos 14.250 forem respondidas com sucesso em até 10 s cada | DES - RNF; INFRA 9.4 (14.250 = 15.000 - 5%; leitura de "observação individual por até 10 segundos" como limite de sucesso: inferência) |
+| Perda no consolidado em pico | Até 5% a 50 req/s. Protocolo: 15.000 consultas em 300 s; aprovado se pelo menos 14.250 forem respondidas com sucesso em até 10 s cada | DES - RNF; INFRA 9.4 (14.250 = 15.000 - 5%; li "observação individual por até 10 segundos" como limite de sucesso, por inferência) |
 | Eventos financeiros descartados silenciosamente | 0 | INFRA 4.10 |
 
 ## Glossário do domínio
