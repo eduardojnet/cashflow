@@ -16,7 +16,8 @@ Variáveis (ver infra/compose.yaml):
 - `SALDOS_LIMITE_PADRAO` e `SALDOS_LIMITE_MAXIMO`: dias por página do
   intervalo quando `limite` é omitido e maior `limite` aceito (TD-008);
 - `FASE_INTERVALO_SEGUNDOS`: intervalo de leitura da fase da reconstrução
-  para `cashflow_reconstrucao_fase` (005-T3; ver `fase`).
+  e da geração ativa para `cashflow_reconstrucao_fase` e
+  `cashflow_geracao_ativa` (005-T3; ver `fase` e `geracao`).
 """
 
 import asyncio
@@ -38,6 +39,11 @@ from starlette.concurrency import run_in_threadpool
 
 from consolidado.adaptadores.http.app import COMPONENTE, Prontidao, criar_app
 from consolidado.adaptadores.http.fase import CONSULTA_FASE, LerFase, vigiar_fase
+from consolidado.adaptadores.http.geracao import (
+    CONSULTA_GERACAO_ATIVA,
+    LerGeracaoAtiva,
+    vigiar_geracao_ativa,
+)
 from consolidado.adaptadores.postgres import (
     FabricaConexao,
     LeituraConsolidadoPostgres,
@@ -121,6 +127,21 @@ def leitor_de_fase(pool: Pool, timeout_segundos: float) -> LerFase:
     return ler
 
 
+def leitor_de_geracao_ativa(pool: Pool, timeout_segundos: float) -> LerGeracaoAtiva:
+    """`controle_projecao.geracao_ativa_id` (migração 0001; review 007, Issue 2)."""
+
+    async def ler() -> int | None:
+        async def consultar() -> int | None:
+            async with pool.connection(timeout=timeout_segundos) as conexao:
+                cursor = await conexao.execute(CONSULTA_GERACAO_ATIVA)
+                linha = await cursor.fetchone()
+            return None if linha is None else int(linha[0])
+
+        return await asyncio.wait_for(consultar(), timeout_segundos)
+
+    return ler
+
+
 def prontidao_de(
     pool: Pool, validador: ValidadorJwt, timeout_segundos: float
 ) -> Prontidao:
@@ -174,20 +195,32 @@ def criar_app_do_ambiente(
     )
     timeout = float(ambiente.get("PRONTIDAO_TIMEOUT_SEGUNDOS", "2"))
     fase = metricas.medidor("cashflow_reconstrucao_fase")
+    geracao_ativa = metricas.medidor("cashflow_geracao_ativa")
     intervalo_fase = float(ambiente.get("FASE_INTERVALO_SEGUNDOS", "10"))
 
     @asynccontextmanager
     async def ciclo_de_vida(_: FastAPI) -> AsyncIterator[None]:
         await pool.open(wait=False)
-        vigia = asyncio.create_task(
-            vigiar_fase(leitor_de_fase(pool, timeout), fase, intervalo_fase)
-        )
+        vigias = [
+            asyncio.create_task(
+                vigiar_fase(leitor_de_fase(pool, timeout), fase, intervalo_fase)
+            ),
+            asyncio.create_task(
+                vigiar_geracao_ativa(
+                    leitor_de_geracao_ativa(pool, timeout),
+                    geracao_ativa,
+                    intervalo_fase,
+                )
+            ),
+        ]
         try:
             yield
         finally:
-            vigia.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await vigia
+            for vigia in vigias:
+                vigia.cancel()
+            for vigia in vigias:
+                with contextlib.suppress(asyncio.CancelledError):
+                    await vigia
             await pool.close()
 
     return criar_app(

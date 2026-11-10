@@ -99,7 +99,7 @@ instantâneo; contador = só cresce e volta a zero quando o processo reinicia.
 | 5 | Quarentena | `cashflow_quarentena_total` (contador) | worker (`worker`) | Consolidado > Quarentena (total) e Quarentena por intervalo |
 | 6 | Pools de conexão | `cashflow_pool_conexoes` (medidor; `componente`, `estado` = `total`, `disponivel`, `em_uso`, `aguardando`) | API de lançamentos (`lancamentos-api`), API do consolidado (`consolidado-api`), worker (`worker`), relay (`relay`) | Recursos > Pools de conexão |
 | 7 | Espaço em disco | `pg_database_size_bytes` (por `datname`); `rabbitmq_disk_space_available_bytes` e `rabbitmq_disk_space_available_limit_bytes` | exporters (`postgres-livro`, `postgres-consolidado`); RabbitMQ, plugin (`rabbitmq`) | Recursos > Tamanho dos bancos; Recursos > Disco livre do RabbitMQ |
-| 8 | Geração ativa | `cashflow_geracao_ativa` (medidor) | API do consolidado (`consolidado-api`), atualizada a cada leitura do banco | Consolidado > Geração ativa |
+| 8 | Geração ativa | `cashflow_geracao_ativa` (medidor) | API do consolidado (`consolidado-api`): `controle_projecao.geracao_ativa_id`, lida a cada `FASE_INTERVALO_SEGUNDOS` (10 s) e gravada também por cada consulta respondida | Consolidado > Geração ativa |
 | 9 | Fase da reconstrução | `cashflow_reconstrucao_fase` (medidor, código da fase) | coordenador grava em `fase_reconstrucao`; a API do consolidado lê a cada 10 s (`FASE_INTERVALO_SEGUNDOS`) e publica (`consolidado-api`) | Reconstrução > Fase da reconstrução |
 | 10 | Checkpoint | `cashflow_checkpoint_posicao` (medidor; `geracao`) | worker (`worker`) | Reconstrução > Checkpoint por geração |
 | 11 | Lacunas | `cashflow_lacunas` (medidor; `geracao`) | worker (`worker`) | Reconstrução > Lacunas por geração |

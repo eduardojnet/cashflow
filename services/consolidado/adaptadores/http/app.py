@@ -26,9 +26,10 @@ requisição é lido.
 Cada resposta incrementa `cashflow_http_requisicoes_total{componente,status}`
 uma vez, inclusive as de erro geradas antes da rota (007 TD-005), e gera
 uma linha de log com `correlation_id`, rota, status e resultado. Saldos e
-token nunca entram no log (design 004 §6; INFRA 8.2). Cada leitura do banco
-atualiza `cashflow_geracao_ativa` com a geração que respondeu (007 design
-§4; INFRA 8.3).
+token nunca entram no log (design 004 §6; INFRA 8.2). Cada consulta
+atualiza `cashflow_geracao_ativa` com a geração que respondeu; a leitura
+periódica de `geracao.py` cobre o intervalo sem consultas (007 design §4;
+INFRA 8.3).
 """
 
 import logging

@@ -201,6 +201,40 @@ def test_falhas_de_publicacao_do_relay_tem_os_quatro_resultados() -> None:
     assert {s["metric"]["job"] for s in series} == {"relay"}
 
 
+def _geracao_ativa_no_banco() -> int:
+    conteiner = _id_do_conteiner("pg-consolidado")
+    assert conteiner, "pg-consolidado fora do ar"
+    resultado = _docker(
+        "exec",
+        conteiner,
+        "psql",
+        "-U",
+        "postgres",
+        "-d",
+        "consolidado",
+        "-tA",
+        "-c",
+        "SELECT geracao_ativa_id FROM controle_projecao WHERE id = 1",
+    )
+    assert resultado.returncode == 0, resultado.stderr
+    return int(resultado.stdout.strip())
+
+
+def test_geracao_ativa_coincide_com_o_banco_sem_esperar_consulta() -> None:
+    # A API lê `controle_projecao` a cada FASE_INTERVALO_SEGUNDOS: o valor
+    # vale desde a subida, não só depois da primeira consulta, e nunca é 0
+    # (as gerações começam em 1; review 007, Issue 2).
+    esperado = _geracao_ativa_no_banco()
+    limite = time.monotonic() + ESPERA_DADOS_SEGUNDOS
+    valores = [float(s["value"][1]) for s in _series_com_dado("cashflow_geracao_ativa")]
+    while valores != [esperado] and time.monotonic() < limite:
+        time.sleep(5)
+        valores = [float(s["value"][1]) for s in _consulta("cashflow_geracao_ativa")]
+
+    assert esperado > 0
+    assert valores == [esperado]
+
+
 def _no_catalogo(nome: str) -> str:
     """Nome no catálogo de uma série coletada.
 
