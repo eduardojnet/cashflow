@@ -106,9 +106,10 @@ separados. As imagens de terceiros precisam ser reprodutíveis.
 
 ### Riscos
 
-- Capacidade da máquina do avaliador. INFRA traz uma baseline provisória sem
-  validação [NVI]; a máquina usada nos testes está descrita no
-  [relatório de carga](../testes/carga-consolidado.md#recursos-da-máquina).
+- Capacidade da máquina do avaliador. A solução foi verificada numa máquina
+  com 12 CPUs lógicas, 16 GB de RAM e 23,7 GiB de disco livre
+  ([relatório de carga](../testes/carga-consolidado.md#recursos-da-máquina));
+  máquina menor não foi testada (001/NFR-001).
 
 ## Notas de implementação
 

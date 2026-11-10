@@ -71,7 +71,7 @@ Itens fora desta entrega por decisão registrada ou por gatilho de ADR.
 | Cache de consulta do consolidado | Sem cache; meta de carga atingida sem ele ([ADR-011](adr/ADR-011-sem-cache-na-entrega-inicial.md); [`testes/carga-consolidado.md`](testes/carga-consolidado.md)) | Teste de carga abaixo da meta, pico maior que o de DES ou latência crescendo com o número de datas (gatilho do ADR-011) | Cache por data com invalidação na consolidação, ou saldo acumulado materializado |
 | Contador de posição único | Um contador monotônico no livro ([ADR-006](adr/ADR-006-posicao-monotonica-e-checkpoint.md)) | Meta de vazão de escrita que o contador não atenda (gatilho do ADR-006) | Medir primeiro a contenção; só então avaliar alternativa, em ADR próprio |
 | Consulta periódica da outbox | Relay por polling ([ADR-003](adr/ADR-003-outbox-transacional-e-relay.md)) | Polling como gargalo de vazão (gatilho do ADR-003) | Notificação do banco para acordar o relay, mantendo o polling como garantia |
-| Capacidade validada | Baseline provisória `[NVI]` (INFRA, "Capacidade local") | Escolha do ambiente de produção | Teste de carga e de falha no ambiente-alvo, registrando os recursos medidos |
+| Capacidade validada | Verificada numa máquina de desenvolvimento (12 CPUs lógicas, 16 GB de RAM, 23,7 GiB livres; [recursos](testes/carga-consolidado.md#recursos-da-máquina)), sem mínimo medido nem ambiente dedicado | Escolha do ambiente de produção | Teste de carga e de falha no ambiente-alvo, registrando os recursos medidos |
 
 ### Observabilidade
 

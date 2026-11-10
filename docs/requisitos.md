@@ -75,11 +75,15 @@ local, Fora do escopo; DES - Requisitos obrigatórios.
 
 ### Requisitos não funcionais
 
-- **001/NFR-001 Capacidade local:** baseline provisória de 4 a 8 vCPUs,
-  16 GB de RAM, 30 GB livres, virtualização, espaço para duas gerações do
-  consolidado e relógio sincronizado. `[NVI]` a confirmar por medição
-  (INFRA - Capacidade local). Os recursos da máquina usada no teste de carga
-  estão em [`testes/carga-consolidado.md`](testes/carga-consolidado.md).
+- **001/NFR-001 Capacidade local:** configuração verificada no teste de
+  carga de 2026-11-06: 12 CPUs lógicas (Intel Core i7-1355U), 16 GB de RAM,
+  23,7 GiB de disco livre, Linux com Docker Engine 29.9.2 e Compose v5.6.1
+  ([recursos da máquina](testes/carga-consolidado.md#recursos-da-máquina)).
+  Nessa máquina a solução completa subiu e atendeu a carga de INFRA 9.4. É a
+  configuração verificada, não um mínimo: nenhuma máquina menor foi testada.
+  Substitui a baseline provisória de INFRA (4 a 8 vCPUs, 16 GB de RAM, 30 GB
+  livres; decisão de Eduardo, 2026-11-10). Não medidos: espaço para duas
+  gerações do consolidado e relógio sincronizado `[NVI]`.
 - **001/NFR-002 Segurança e privacidade:** coberto por 001/FR-004 a
   001/FR-008.
 - **001/NFR-003 Usabilidade:** instruções de execução claras no README (DES).

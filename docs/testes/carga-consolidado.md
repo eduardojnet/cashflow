@@ -99,5 +99,6 @@ relação com o projeto.
 - O registro da massa grava lançamentos no livro, que é imutável (002
   TD-003). As chaves de idempotência fixas fazem a reexecução devolver os
   mesmos lançamentos sem criar novos.
-- A atualização de 001/NFR-001 com os recursos acima é feita por Eduardo
-  fora da execução não assistida (emenda da 004-T6, 2026-11-06).
+- 001/NFR-001 passou a registrar os recursos acima no lugar da baseline
+  provisória de INFRA (decisão de Eduardo, 2026-11-10; emenda da 004-T6,
+  2026-11-06).
