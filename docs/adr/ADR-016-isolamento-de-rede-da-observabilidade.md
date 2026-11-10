@@ -1,6 +1,6 @@
 # ADR-016: Isolamento de rede da observabilidade e bind do `/metrics`
 
-> Status: Proposto (aplicado no código; pendente de confirmação de Eduardo)
+> Status: Aceito (confirmado por Eduardo em 2026-11-10)
 > Data: 2026-11-06
 > Relacionado: INFRA 6.1, 6.5, 6.6, 5.11; 007 TD-007 (emenda); 001 TD-002; [ADR-010](ADR-010-docker-compose-local.md), [ADR-012](ADR-012-prometheus-grafana.md)
 
@@ -116,8 +116,8 @@ observabilidade.
 
 - Status: a emenda 007 TD-007 foi proposta pelo executor na atividade 6.1 e
   aplicada em 2026-11-06 sob a instrução de Eduardo de resolver bloqueios em
-  lote; a confirmação explícita de Eduardo ainda está pendente. Até lá, este
-  ADR fica como `Proposto`.
+  lote. Ficou como `Proposto` até a confirmação explícita de Eduardo, em
+  2026-11-10.
 - Configuração em [`infra/compose.yaml`](../../infra/compose.yaml) (redes,
   aliases e `METRICAS_ENDERECO`) e em `infra/postgres/*/10-papeis.sh`.
 - Gatilho de revisão: Grafana ou Prometheus precisarem de acesso externo, ou

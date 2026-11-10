@@ -81,9 +81,7 @@ RabbitMQ e `/metrics` não têm porta publicada no host. As redes de dados e a
 `rede-observabilidade` são internas e sem IPv4 na ponte do host. O `/metrics`
 de cada API escuta só no alias da API na rede interna do seu lado
 (`METRICAS_ENDERECO`), porque as APIs também estão na `rede-identidade`, que o
-host alcança (007 TD-007; [ADR-016](adr/ADR-016-isolamento-de-rede-da-observabilidade.md),
-com status "Proposto": aplicado no código, pendente de confirmação de
-Eduardo).
+host alcança (007 TD-007; [ADR-016](adr/ADR-016-isolamento-de-rede-da-observabilidade.md)).
 
 ## Métricas de INFRA 8.3
 

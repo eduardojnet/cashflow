@@ -89,7 +89,6 @@ apresentado como implementado:
 |--------|----------------------|
 | Script único de verificação (`scripts/verificar.sh`), previsto no steering, não existe; lint, tipos e testes rodam por comandos separados | [ADR-009](adr/ADR-009-stack-python.md) |
 | O relay não expõe `cashflow_pool_conexoes`, embora o mapa de métricas da spec 007 o liste | [`observabilidade.md`](observabilidade.md#métricas-de-infra-83) |
-| ADR-016 (isolamento de rede da observabilidade) aplicado no código, mas com status `Proposto`, pendente de confirmação de Eduardo | [`adr/README.md`](adr/README.md) |
 
 ## Transição de um legado
 

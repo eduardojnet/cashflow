@@ -469,9 +469,6 @@ avaliador precisa foi transcrito para `docs/`.
 - **Lint e tipos** (Ruff e mypy) rodam como ferramentas avulsas (`uvx ruff
   check .`, `uv run --with mypy mypy`), sem script único de verificação
   ([ADR-009](docs/adr/ADR-009-stack-python.md)).
-- **ADR-016** (isolamento de rede da observabilidade) está aplicado no
-  código, mas com status `Proposto`, pendente de confirmação de Eduardo
-  ([ADR-016](docs/adr/ADR-016-isolamento-de-rede-da-observabilidade.md)).
 - **Publicação no GitHub** é a etapa final (006-T8).
 - Demais lacunas e o que ficou fora do escopo:
   [`docs/evolucoes.md`](docs/evolucoes.md).

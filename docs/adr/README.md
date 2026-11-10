@@ -50,7 +50,7 @@ arquitetura: [`docs/arquitetura/`](../arquitetura/README.md).
 | [ADR-013](ADR-013-escopo-lancamentos-consultar.md) | Escopo adicional `lancamentos:consultar` | Aceito | 002 D-002 |
 | [ADR-014](ADR-014-audiencia-derivada-do-escopo.md) | Audiência do token derivada do escopo | Aceito | 001 TD-008; 002 DQ-003 |
 | [ADR-015](ADR-015-catalogo-fechado-de-metricas.md) | Catálogo fechado de métricas e métricas do projeto fora de INFRA 8.3 | Aceito | 007 TD-002, TD-003, TD-005, TD-006 |
-| [ADR-016](ADR-016-isolamento-de-rede-da-observabilidade.md) | Isolamento de rede da observabilidade e bind do `/metrics` | Proposto | 007 TD-007; 001 TD-002 |
+| [ADR-016](ADR-016-isolamento-de-rede-da-observabilidade.md) | Isolamento de rede da observabilidade e bind do `/metrics` | Aceito | 007 TD-007; 001 TD-002 |
 
 ## Rastreio: decisão técnica aprovada para ADR
 
