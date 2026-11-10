@@ -120,7 +120,7 @@ um (spec 006, `design.md` §4):
 | Justificativa de tecnologias e tipo de arquitetura | [`docs/adr/`](docs/adr/README.md) |
 | Testes | [`docs/testes/`](docs/testes/estrategia.md) e pasta [`tests/`](tests/) |
 | README | [`README.md`](README.md) (este arquivo) |
-| Repositório público | `cashflow` no GitHub (decisão 006 D-005); publico na etapa final (006-T8) |
+| Repositório público | [github.com/eduardojnet/cashflow](https://github.com/eduardojnet/cashflow) (decisão 006 D-005) |
 | Documentação no repositório | [`docs/`](#documentação) |
 
 "Pode ser feito na linguagem que você domina": usei Python 3.12, que INFRA
@@ -167,7 +167,7 @@ Todos os comandos rodam a partir da raiz do repositório.
 **1. Obter o código.**
 
 ```bash
-git clone <url-do-repositório> cashflow
+git clone https://github.com/eduardojnet/cashflow.git cashflow
 cd cashflow
 ```
 
@@ -532,6 +532,5 @@ isso transcrevi para `docs/` o conteúdo de que o avaliador precisa.
   alertas que dependem do próprio produtor da métrica, entre outros. A lista
   completa, com o que já corrigi, está em
   [`docs/evolucoes.md`](docs/evolucoes.md#lacunas-conhecidas-da-implementação).
-- **Publicação no GitHub:** é a minha etapa final (006-T8).
 - Demais lacunas e o que ficou fora do escopo:
   [`docs/evolucoes.md`](docs/evolucoes.md).
