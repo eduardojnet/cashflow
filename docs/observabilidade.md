@@ -1,12 +1,12 @@
 # Observabilidade
 
-Monitoramento da solução, diferencial de DES ("monitoramento e
-observabilidade") e requisitos de INFRA §8. Implementação na spec 007
-(observabilidade com métricas), aprovada por Eduardo em 2026-11-05, com as
-emendas de 2026-11-06. Conteúdo conferido contra o código, o
-[`infra/compose.yaml`](../infra/compose.yaml), os alvos de coleta, as regras
-de alerta e o painel versionado. As specs ficam em `.ai/sdd/specs/`, pasta
-local que não é versionada (decisão 006 D-006).
+Aqui descrevo como monitoro a solução, que é um diferencial de DES
+("monitoramento e observabilidade") e atende aos requisitos de INFRA §8.
+Implementei na spec 007 (observabilidade com métricas), que aprovei em
+2026-11-05, com as emendas de 2026-11-06. Conferi o conteúdo contra o
+código, o [`infra/compose.yaml`](../infra/compose.yaml), os alvos de coleta,
+as regras de alerta e o painel versionado. Mantenho as specs em
+`.ai/sdd/specs/`, pasta local que não versiono (decisão 006 D-006).
 
 Fontes:
 
@@ -14,10 +14,11 @@ Fontes:
 - INFRA = [`Requisitos_de_Infraestrutura.md`](../Requisitos_de_Infraestrutura.md)
 
 Legenda de origem, a mesma de [`requisitos.md`](requisitos.md): "Fonte" =
-DES ou INFRA; "Eduardo" = decisão do autor com data; "Proposta" = não consta
-nas fontes e foi aprovada junto com a spec; `[NVI]` = não verificado.
+DES ou INFRA; "decisão minha" = decisão que tomei, com data; "Proposta" = não
+consta nas fontes e aprovei junto com a spec; `[NVI]` = não verificado.
 
-Decisões: [ADR-012](adr/ADR-012-prometheus-grafana.md) (Prometheus e
+As decisões e as alternativas que rejeitei estão em
+[ADR-012](adr/ADR-012-prometheus-grafana.md) (Prometheus e
 Grafana), [ADR-015](adr/ADR-015-catalogo-fechado-de-metricas.md) (catálogo
 fechado de métricas) e
 [ADR-016](adr/ADR-016-isolamento-de-rede-da-observabilidade.md) (isolamento
@@ -76,18 +77,20 @@ flowchart LR
     H -->|https://127.0.0.1:8446| G
 ```
 
-Exposição (007 FR-003; INFRA 6.1, 6.6): Prometheus, exporters, plugin do
-RabbitMQ e `/metrics` não têm porta publicada no host. As redes de dados e a
-`rede-observabilidade` são internas e sem IPv4 na ponte do host. O `/metrics`
-de cada API escuta só no alias da API na rede interna do seu lado
-(`METRICAS_ENDERECO`), porque as APIs também estão na `rede-identidade`, que o
-host alcança (007 TD-007; [ADR-016](adr/ADR-016-isolamento-de-rede-da-observabilidade.md)).
+Exposição (007 FR-003; INFRA 6.1, 6.6): não publiquei no host porta para
+Prometheus, exporters, plugin do RabbitMQ nem `/metrics`, porque dados
+operacionais não devem sair da máquina sem autenticação. Deixei as redes de
+dados e a `rede-observabilidade` internas e sem IPv4 na ponte do host. Fiz o
+`/metrics` de cada API escutar só no alias da API na rede interna do seu
+lado (`METRICAS_ENDERECO`), porque as APIs também estão na
+`rede-identidade`, que o host alcança (007 TD-007;
+[ADR-016](adr/ADR-016-isolamento-de-rede-da-observabilidade.md)).
 
 ## Métricas de INFRA 8.3
 
-As 12 métricas exigidas por INFRA 8.3, com o nome do mapa de 007 design §4
-(nomes: Proposta), o componente que a origina (o `job` do Prometheus) e o
-painel do Grafana que a exibe, no formato "seção > painel". Medidor = valor
+Listo as 12 métricas exigidas por INFRA 8.3, com o nome que dei no mapa de
+007 design §4 (nomes: Proposta), o componente que a origina (o `job` do
+Prometheus) e o painel do Grafana que a exibe, no formato "seção > painel". Medidor = valor
 instantâneo; contador = só cresce e volta a zero quando o processo reinicia.
 
 | # | Item de INFRA 8.3 | Métrica (tipo, rótulos) | Componente de origem (`job`) | Painel Grafana |
@@ -105,14 +108,20 @@ instantâneo; contador = só cresce e volta a zero quando o processo reinicia.
 | 11 | Lacunas | `cashflow_lacunas` (medidor; `geracao`) | worker (`worker`) | Reconstrução > Lacunas por geração |
 | 12 | Falhas de JWT e JWKS | `cashflow_jwt_falhas_total` (contador; `motivo`) e `cashflow_jwks_falhas_total` (contador) | as duas APIs, pelo pacote `packages/seguranca` (`lancamentos-api`, `consolidado-api`) | Segurança > Falhas de JWT por motivo; Segurança > Falhas de JWKS |
 
-Diferenças em relação ao mapa de 007 design §4, verificadas no código e em
+Diferenças em relação ao mapa de 007 design §4, que verifiquei no código e em
 [`tests/observabilidade/test_cobertura.py`](../tests/observabilidade/test_cobertura.py):
 
-- **Pools de conexão:** o mapa lista APIs, relay, worker e coordenador. O
-  coordenador roda como comando de linha, sem `/metrics` (o próprio design
-  §4 já o diz). Os outros quatro registram o medidor pela mesma função,
-  `observabilidade.medir_pool`. O relay só passou a registrá-lo na correção
-  da review da spec 007, em 2026-11-10: 003-T5 não o tinha implementado.
+- **Pools de conexão:** o mapa listava APIs, relay, worker e coordenador.
+  Tirei o coordenador, porque roda como comando de linha, sem `/metrics` (o
+  próprio design §4 já o dizia). Os outros quatro registram o medidor pela
+  mesma função, `observabilidade.medir_pool`, para que os estados tenham o
+  mesmo significado em todos. O relay só passou a registrá-lo quando o
+  corrigi a partir da review da spec 007, em 2026-11-10: na 003-T5 eu não o
+  tinha implementado.
+- **Geração ativa:** até 2026-11-10 o medidor só mudava quando uma consulta
+  respondia, e valia 0 depois de cada subida. Corrigi fazendo a API ler
+  `controle_projecao` a cada intervalo; o teste de cobertura exige o valor
+  igual ao do banco.
 - **Mensagens prontas e não confirmadas e espaço em disco:** vêm de métricas
   nativas do plugin do RabbitMQ e do exporter do PostgreSQL, sem nome
   `cashflow_*`, como o mapa prevê.
@@ -146,9 +155,10 @@ projeção (005), não dado de cliente.
 
 ## Métricas do projeto fora de INFRA 8.3
 
-Decisão do projeto, não exigência das fontes: emendas 007 TD-005 e TD-006,
-de Eduardo, em 2026-11-06, registradas em
-[ADR-015](adr/ADR-015-catalogo-fechado-de-metricas.md).
+São decisões minhas, não exigência das fontes: emendas 007 TD-005 e TD-006,
+de 2026-11-06, registradas em
+[ADR-015](adr/ADR-015-catalogo-fechado-de-metricas.md). A coluna "Por quê"
+traz a razão de cada uma.
 
 | Métrica (tipo, rótulos) | Componente de origem (`job`) | Painel Grafana | Por quê |
 |-------------------------|------------------------------|----------------|---------|
@@ -157,20 +167,23 @@ de Eduardo, em 2026-11-06, registradas em
 
 Métricas nativas também usadas no painel: `up` de cada alvo (Alvos de coleta >
 Alvos no ar) e `rabbitmq_global_messages_redelivered_total` (Mensageria >
-Reentregas). Nenhuma outra métrica `cashflow_*` existe: o pacote recusa, na
-subida, métrica fora do catálogo.
+Reentregas). Nenhuma outra métrica `cashflow_*` existe: fiz o pacote
+recusar, na subida, métrica fora do catálogo.
 
 ## Rótulos sem dados sensíveis
 
-INFRA 8.2 e 007 FR-004: nenhum valor financeiro, token, segredo ou
+INFRA 8.2 e 007 FR-004: não ponho valor financeiro, token, segredo nem
 identificador de cliente ou de lançamento em nome ou rótulo de métrica.
+Garanti isso no código, não por convenção, porque um controle que depende de
+ninguém errar não é verificável:
 
-- **Catálogo fechado (007 TD-003):** cada métrica tem a lista exata de rótulos
-  permitidos em `ROTULOS_PERMITIDOS`; registrar métrica ou rótulo fora dela é
-  erro na subida do processo.
-- **Defesa adicional:** rótulo cujo nome sugira dado sensível (`cliente`,
-  `lancamento`, `valor`, `saldo`, `token`, `segredo`, `senha`) é recusado
-  mesmo que alguém o acrescente à lista.
+- **Catálogo fechado (007 TD-003):** dei a cada métrica a lista exata de
+  rótulos permitidos em `ROTULOS_PERMITIDOS`; registrar métrica ou rótulo
+  fora dela é erro na subida do processo.
+- **Defesa adicional:** recuso o rótulo cujo nome sugira dado sensível
+  (`cliente`, `lancamento`, `valor`, `saldo`, `token`, `segredo`, `senha`)
+  mesmo que alguém o acrescente à lista, para que um descuido na lista não
+  vaze dado.
 - **Verificação no ambiente:**
   [`test_cobertura.py`](../tests/observabilidade/test_cobertura.py) lê do
   Prometheus todas as séries `cashflow_*` e confere que só têm os rótulos do
@@ -179,9 +192,10 @@ identificador de cliente ou de lançamento em nome ou rótulo de métrica.
 
 ## Alertas
 
-Regras avaliadas pelo Prometheus e exibidas no painel (seção Alertas) e na
-página de alertas do Grafana; sem notificação externa, porque nenhuma fonte
-define canal de envio (007 FR-006, TD-004; regras: Proposta). Limites em
+O Prometheus avalia as regras e o painel as exibe (seção Alertas), assim
+como a página de alertas do Grafana. Não pus notificação externa, porque
+nenhuma fonte define canal de envio e escolher um seria inventar requisito
+(007 FR-006, TD-004; regras: Proposta). Os limites estão em
 [`regras.yml`](../infra/observabilidade/regras.yml).
 
 | Alerta | Condição | Limite | Severidade |
@@ -190,20 +204,29 @@ define canal de envio (007 FR-006, TD-004; regras: Proposta). Limites em
 | `CashFlowQuarentena` | soma de `cashflow_quarentena_total` acima do limite | 0 | `critico` |
 | `CashFlowLacunas` | `cashflow_lacunas` de uma geração acima do limite por mais de 1 minuto | 0 | `aviso` |
 
-Cada limite é uma série `cashflow:limite_*`, também desenhada no painel.
-Para mudar um limite: editar o número em `regras.yml` e recarregar a
-configuração sem perder dados, com
+Declarei cada limite como uma série `cashflow:limite_*`, também desenhada no
+painel, para que quem olha o gráfico veja a linha do alerta. Para mudar um
+limite: editar o número em `regras.yml` e recarregar a configuração sem
+perder dados, com
 `docker compose -f infra/compose.yaml kill -s SIGHUP prometheus`.
 
-Limitação: `cashflow_quarentena_total` conta desde a última subida do worker.
-O registro permanente da quarentena é a tabela `quarentena` do consolidado.
+Limitações que conheço e deixei registradas nas
+[lacunas](evolucoes.md#lacunas-conhecidas-da-implementação):
+`cashflow_quarentena_total` conta desde a última subida do worker, então o
+alerta se apaga no reinício, e o registro permanente da quarentena é a
+tabela `quarentena` do consolidado. Além disso, os alertas dependem do
+próprio produtor da métrica: com o relay ou o worker parado, a série some e
+o alerta não dispara, e não criei regra para alvo fora do ar; o alvo parado
+aparece como `up = 0` na seção Alvos de coleta. `[NVI]`: conclusão por
+análise das expressões.
 
 ## Painel Grafana
 
-Painel único "CashFlow" (uid `cashflow`), versionado em
+Fiz um painel único, "CashFlow" (uid `cashflow`), versionado em
 [`cashflow.json`](../infra/observabilidade/grafana/dashboards/cashflow.json) e
 carregado pelo provisionamento na subida, com a fonte de dados Prometheus
-(007 FR-002; design 007 §7).
+(007 FR-002; design 007 §7). Versionei o painel para que ele suba igual em
+qualquer máquina, sem configuração manual.
 
 | Seção | Painéis |
 |-------|---------|
@@ -219,13 +242,14 @@ carregado pelo provisionamento na subida, com a fonte de dados Prometheus
 Acesso, com o ambiente no ar: `https://localhost:8446` (porta trocável por
 `GRAFANA_PORTA_HOST`), usuário `admin-cashflow` e senha `GRAFANA_SENHA_ADMIN`
 de `infra/.env`. O navegador precisa confiar na AC local
-(`infra/tls/gerados/ac/ac-cashflow.crt`). Sem cadastro aberto, sem acesso
-anônimo e sem telemetria para fora.
+(`infra/tls/gerados/ac/ac-cashflow.crt`). Desliguei o cadastro aberto, o
+acesso anônimo e a telemetria para fora, porque o painel mostra dados
+operacionais.
 
 ## Logs estruturados
 
-INFRA 8.1 e 8.2. Cada componente escreve uma linha JSON por evento, com
-redação aplicada pelo próprio módulo de logs, sem depender de quem escreve a
+INFRA 8.1 e 8.2. Cada componente escreve uma linha JSON por evento. Apliquei
+a redação no próprio módulo de logs, para não depender de quem escreve a
 mensagem lembrar a regra
 ([lançamentos](../services/lancamentos/adaptadores/http/logs.py),
 [relay](../services/relay/adaptadores/logs.py),
@@ -246,34 +270,36 @@ mensagem lembrar a regra
   (`evento_id`, `posicao`, geração, fase), contagens e tipos de erro, nunca o
   conteúdo financeiro.
 
-Não há rastreamento distribuído (tracing) nesta entrega: fora do escopo do
-projeto (handoff das specs, "Out of Scope").
+Não fiz rastreamento distribuído (tracing) nesta entrega: deixei fora do
+escopo do projeto (handoff das specs, "Out of Scope"), porque nenhuma fonte o
+pede.
 
 ## Health checks
 
-Live e ready em APIs, bancos, RabbitMQ, Keycloak, relay, worker, Prometheus e
-Grafana; "pronto" significa dependências utilizáveis, não só processo vivo
-(INFRA 8.4, 8.5; 007 FR-005). Tabela completa em
+Pus live e ready em APIs, bancos, RabbitMQ, Keycloak, relay, worker,
+Prometheus e Grafana; defini "pronto" como dependências utilizáveis, não só
+processo vivo (INFRA 8.4, 8.5; 007 FR-005). Tabela completa em
 [05 - Implantação local](arquitetura/05-implantacao-local.md#health-checks).
-Os exporters não têm health check no compose; parados, aparecem com `up = 0`
-na seção Alvos de coleta.
+Não pus health check nos exporters; parados, aparecem com `up = 0` na seção
+Alvos de coleta.
 
 ## Verificação
 
-Testes automatizados, executados com o ambiente no ar (`docker compose -f
-infra/compose.yaml up -d --wait`):
+Escrevi testes automatizados, que rodo com o ambiente no ar (`docker compose
+-f infra/compose.yaml up -d --wait`):
 
 | Teste | O que garante |
 |-------|---------------|
 | [`tests/observabilidade/test_alvos.py`](../tests/observabilidade/test_alvos.py) | Todos os alvos com `up = 1`; exporters com o papel de monitoramento; Prometheus só em redes internas; host não alcança `/metrics` nem Prometheus; Grafana só em loopback e só com TLS |
-| [`tests/observabilidade/test_cobertura.py`](../tests/observabilidade/test_cobertura.py) | Dados no Prometheus para as 12 métricas de INFRA 8.3, cada uma do componente de origem; dados para as duas métricas fora de INFRA 8.3; rótulos sem dado sensível |
+| [`tests/observabilidade/test_cobertura.py`](../tests/observabilidade/test_cobertura.py) | Dados no Prometheus para as 12 métricas de INFRA 8.3, cada uma do componente de origem; geração ativa igual à do banco, sem consulta prévia; dados para as duas métricas fora de INFRA 8.3; rótulos sem dado sensível |
 | [`tests/observabilidade/test_painel.py`](../tests/observabilidade/test_painel.py) | Painel com as seções do design; cada métrica de INFRA 8.3 num gráfico; painel carregado pelo provisionamento; cada consulta do painel devolve dados pela API do Grafana |
 | [`tests/observabilidade/test_regras.py`](../tests/observabilidade/test_regras.py) | Regras válidas no `promtool`; cada alerta dispara acima do limite e não dispara com a solução saudável; quarentena injetada num projeto compose à parte dispara o alerta |
 
-O teste de carga do consolidado rodou com a coleta ativa e cumpriu a meta
-(007 NFR-001); números em
+Rodei o teste de carga do consolidado com a coleta ativa, e ele cumpriu a
+meta (007 NFR-001); números em
 [`testes/carga-consolidado.md`](testes/carga-consolidado.md).
 
-`[NVI]` A conferência visual do painel durante o teste de carga ficou
-pendente manual de Eduardo (atividade 9.1); a verificação automatizada
-consulta cada painel pela API do Grafana fora da carga.
+`[NVI]` Ainda não fiz a conferência visual do painel durante o teste de
+carga (atividade 9.1). A verificação automatizada consulta cada painel pela
+API do Grafana, e na review da spec 007 rodei essa consulta com o k6 em
+andamento.

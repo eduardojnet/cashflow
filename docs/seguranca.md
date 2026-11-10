@@ -1,12 +1,13 @@
 # Segurança para consumo de serviços
 
-Critérios de segurança para consumo dos serviços, diferencial de DES
-("critérios de segurança para consumo de serviços"), escritos como regras que
-o sistema cliente do comerciante segue para consumir as APIs e que a solução
-impõe. Cada regra parte de um item de INFRA §5. Conteúdo conferido contra o
-realm do Keycloak, o pacote `packages/seguranca`, as APIs, o
-[`infra/compose.yaml`](../infra/compose.yaml) e os testes. As specs ficam em
-`.ai/sdd/specs/`, pasta local que não é versionada (decisão 006 D-006).
+Aqui escrevo os critérios de segurança para consumo dos serviços, um
+diferencial de DES ("critérios de segurança para consumo de serviços"). Os
+escrevi como regras que o sistema cliente do comerciante segue para consumir
+as APIs e que eu imponho na solução, porque uma regra que só o cliente
+cumpre não protege nada. Cada regra parte de um item de INFRA §5. Conferi o
+conteúdo contra o realm do Keycloak, o pacote `packages/seguranca`, as APIs,
+o [`infra/compose.yaml`](../infra/compose.yaml) e os testes. Mantenho as specs
+em `.ai/sdd/specs/`, pasta local que não versiono (decisão 006 D-006).
 
 Fontes:
 
@@ -14,10 +15,11 @@ Fontes:
 - INFRA = [`Requisitos_de_Infraestrutura.md`](../Requisitos_de_Infraestrutura.md)
 
 Legenda de origem, a mesma de [`requisitos.md`](requisitos.md): "Fonte" =
-DES ou INFRA; "Eduardo" = decisão do autor com data; "Proposta" = não consta
-nas fontes e foi aprovada junto com a spec; `[NVI]` = não verificado.
+DES ou INFRA; "decisão minha" = decisão que tomei, com data; "Proposta" = não
+consta nas fontes e aprovei junto com a spec; `[NVI]` = não verificado.
 
-Decisões: [ADR-008](adr/ADR-008-keycloak-client-credentials-jwt.md)
+As decisões e as alternativas que rejeitei estão em
+[ADR-008](adr/ADR-008-keycloak-client-credentials-jwt.md)
 (Keycloak, Client Credentials, JWT validado em cada API),
 [ADR-013](adr/ADR-013-escopo-lancamentos-consultar.md) (escopo
 `lancamentos:consultar`) e
@@ -28,15 +30,16 @@ escopo). Fluxo em
 ## Quem consome o quê
 
 Os consumidores são sistemas, não pessoas: clientes técnicos do comerciante
-(INFRA 5.2). Cada cliente tem só os escopos da sua função.
+(INFRA 5.2). Dei a cada cliente só os escopos da sua função, para que o
+vazamento de um segredo exponha só aquela função.
 
 | Cliente técnico | Escopos | Operações permitidas | Audiência no token |
 |-----------------|---------|----------------------|--------------------|
 | `cliente-lancamentos` | `lancamentos:registrar` | `POST /v1/lancamentos` | `lancamentos-api` |
 | `cliente-consultas` | `consolidado:consultar`, `lancamentos:consultar` | `GET /v1/consolidado/saldos/{data}`, `GET /v1/consolidado/saldos?...`, `GET /v1/consolidado/inclusoes/{lancamento_id}`, `GET /v1/lancamentos?...` | `consolidado-api`, `lancamentos-api` |
 
-Endereços no ambiente local, todos em `127.0.0.1` e só com TLS (INFRA 6.5,
-6.6):
+Publiquei os endereços do ambiente local todos em `127.0.0.1` e só com TLS
+(INFRA 6.5, 6.6):
 
 | Serviço | Endereço |
 |---------|----------|
@@ -45,23 +48,24 @@ Endereços no ambiente local, todos em `127.0.0.1` e só com TLS (INFRA 6.5,
 | API do consolidado | `https://localhost:8445` |
 
 Bancos, RabbitMQ, Prometheus, `/metrics`, relay, worker e coordenador não são
-serviços de consumo: não têm porta no host e ficam em redes internas (INFRA
-6.1 a 6.4; [05 - Implantação local](arquitetura/05-implantacao-local.md#portas-publicadas)).
+serviços de consumo: não lhes dei porta no host e os deixei em redes
+internas (INFRA 6.1 a 6.4; [05 - Implantação local](arquitetura/05-implantacao-local.md#portas-publicadas)).
 
 ## Regras de consumo
 
-Uma regra por item de INFRA §5. "Regra" é o que o consumidor faz; "Como é
-imposta" é o que a solução faz, inclusive quando o consumidor erra;
-"Evidência" é o teste que verifica.
+Escrevi uma regra por item de INFRA §5. "Regra" é o que o consumidor faz;
+"Como imponho" é o que a solução faz, inclusive quando o consumidor erra;
+"Evidência" é o teste com que verifico.
 
 ### RC-01: Obter o token no provedor de identidade do realm (INFRA 5.1)
 
 - **Regra:** o consumidor obtém o token no endpoint de token do realm
   `cashflow` e não depende de nada específico do Keycloak além do padrão
   OAuth 2.0 (endpoint de token, emissor e JWKS).
-- **Como é imposta:** as APIs recebem emissor, URL do JWKS e AC pelo ambiente
-  (`JWT_EMISSOR`, `JWT_JWKS_URL`, `JWT_AC_ARQUIVO`); trocar o provedor é trocar
-  essas variáveis, sem mudar código. Realm versionado em
+- **Como imponho:** as APIs recebem emissor, URL do JWKS e AC pelo ambiente
+  (`JWT_EMISSOR`, `JWT_JWKS_URL`, `JWT_AC_ARQUIVO`); fiz assim para que trocar
+  o provedor seja trocar essas variáveis, sem mudar código, como INFRA 5.1
+  pede de um Keycloak substituível. Versionei o realm em
   [`realm-cashflow.json`](../infra/keycloak/realm-cashflow.json), sem segredos
   (001 TD-005).
 - **Evidência:** [`tests/infra/test_keycloak.py`](../tests/infra/test_keycloak.py).
@@ -71,11 +75,12 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** cada sistema cliente se autentica com o seu `client_id` e o seu
   segredo, com `grant_type=client_credentials`. Não há login de usuário nem
   refresh token: quando o token expira, o cliente pede outro.
-- **Como é imposta:** os dois clientes são confidenciais, com conta de
-  serviço e os demais fluxos desligados (código de autorização, implícito,
+- **Como imponho:** configurei os dois clientes como confidenciais, com conta
+  de serviço e os demais fluxos desligados (código de autorização, implícito,
   senha, dispositivo e CIBA); refresh token desligado para Client
   Credentials; o realm exige TLS em todas as conexões (`sslRequired: all`) e
-  tem proteção contra força bruta.
+  tem proteção contra força bruta. Desliguei o que não é usado para reduzir
+  a superfície de ataque.
 - **Evidência:** `test_keycloak.py` (`test_clientes_tecnicos_nao_usam_outro_fluxo`,
   `test_segredo_errado_e_recusado`, `test_endpoint_de_token_nao_responde_sem_tls`).
 
@@ -84,11 +89,12 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** o consumidor trata o `access_token` como opaco e o envia como
   recebeu. O token vale 300 s (`accessTokenLifespan`); pode ser reutilizado
   enquanto válido.
-- **Como é imposta:** o Keycloak assina com RS256 e publica só chaves
-  assimétricas no JWKS. As APIs aceitam só RS256: qualquer outro algoritmo
-  no cabeçalho, inclusive `none` e os simétricos, é recusado antes de buscar
-  a chave e verificar a assinatura; carga adulterada ou
-  assinatura de outra chave com o mesmo `kid` é recusada.
+- **Como imponho:** o Keycloak assina com RS256 e publica só chaves
+  assimétricas no JWKS. Fiz as APIs aceitarem só RS256: qualquer outro
+  algoritmo no cabeçalho, inclusive `none` e os simétricos, é recusado antes
+  de buscar a chave e verificar a assinatura, porque aceitar o algoritmo que
+  o token declara permitiria forjar um token sem a chave privada. Carga
+  adulterada ou assinatura de outra chave com o mesmo `kid` é recusada.
 - **Evidência:** `test_keycloak.py` (`test_token_e_assinado_com_rs256_e_confere_com_o_jwks`,
   `test_jwks_publica_somente_chaves_assimetricas`);
   [`test_validador_jwt.py`](../packages/seguranca/tests/test_validador_jwt.py)
@@ -101,13 +107,14 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** cada sistema usa o cliente da sua função e chama só as operações
   dos seus escopos (tabela [Quem consome o quê](#quem-consome-o-quê)). Um
   sistema que só consulta não recebe o cliente de registro.
-- **Como é imposta:** escopos no formato `<recurso>:<ação>`; cada rota exige
+- **Como imponho:** escopos no formato `<recurso>:<ação>`; cada rota exige
   um escopo e a audiência da sua API (`aud`, derivada do escopo pelo
-  Keycloak, 001 TD-008). Token sem o escopo da rota: 403 com
+  Keycloak, 001 TD-008), para que um token de uma API não valha na outra. Token sem o escopo da rota: 403 com
   `WWW-Authenticate: Bearer error="insufficient_scope"` e corpo
   `{"erro": "sem_escopo"}`. O escopo `lancamentos:consultar` não consta de
-  INFRA 5.4: foi acrescentado por decisão de Eduardo (002 Q-001;
-  [ADR-013](adr/ADR-013-escopo-lancamentos-consultar.md)).
+  INFRA 5.4: eu o acrescentei (002 Q-001), porque a listagem de lançamentos
+  precisava de um escopo de leitura que não desse escrita
+  ([ADR-013](adr/ADR-013-escopo-lancamentos-consultar.md)).
 - **Evidência:** `test_keycloak.py` (`test_token_de_cada_cliente_contem_somente_seu_escopo`,
   `test_token_traz_a_audiencia_das_apis_dos_seus_escopos`,
   `test_cliente_de_registro_nao_obtem_escopo_de_consulta`);
@@ -118,12 +125,12 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** toda requisição leva `Authorization: Bearer <access_token>`. Não
   há gateway: o consumidor chama cada API diretamente, e cada uma valida o
   token por conta própria.
-- **Como é imposta:** cada API valida, nesta ordem, formato, algoritmo, chave
+- **Como imponho:** cada API valida, nesta ordem, formato, algoritmo, chave
   pelo `kid`, assinatura, expiração, vigência, emissor
   (`https://localhost:8443/realms/cashflow`), audiência e escopo
-  ([`validador.py`](../packages/seguranca/src/seguranca/validador.py)). A
-  autenticação vem antes do corpo e dos parâmetros: sem token válido, nada da
-  requisição é lido. Token ausente, malformado, expirado ou com emissor ou
+  ([`validador.py`](../packages/seguranca/src/seguranca/validador.py)). Pus a
+  autenticação antes do corpo e dos parâmetros, para que, sem token válido,
+  nada da requisição seja lido. Token ausente, malformado, expirado ou com emissor ou
   audiência errados: 401 com `WWW-Authenticate: Bearer error="invalid_token"`
   e corpo `{"erro": "nao_autenticado"}`. Cada falha soma em
   `cashflow_jwt_falhas_total{motivo}` ([observabilidade](observabilidade.md#métricas-de-infra-83)).
@@ -138,12 +145,12 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** 503 `indisponivel` é falha temporária do serviço (banco ou JWKS
   indisponível): o consumidor repete depois, com espera crescente. 401 não se
   resolve repetindo o mesmo token: o consumidor obtém um novo.
-- **Como é imposta:** o JWKS fica em cache por 300 s
+- **Como imponho:** guardo o JWKS em cache por 300 s
   (`JWT_JWKS_TTL_SEGUNDOS`). Com o Keycloak fora, tokens válidos continuam
   aceitos até o cache vencer; depois, sem chave válida, a API responde 503,
   não 401, para não mandar o cliente descartar um token bom. `kid`
-  desconhecido força nova busca do JWKS (rotação de chave), limitada a uma a
-  cada 10 s, para que tokens com `kid` inventado não gerem uma consulta ao
+  desconhecido força nova busca do JWKS (rotação de chave), que limitei a uma
+  a cada 10 s, para que tokens com `kid` inventado não gerem uma consulta ao
   Keycloak por requisição. Falhas somam em `cashflow_jwks_falhas_total`.
 - **Evidência:** `test_validador_jwt.py` (`test_keycloak_parado_token_valido_e_aceito_dentro_do_ttl`,
   `test_keycloak_parado_apos_o_ttl_sem_chave_valida_da_503`,
@@ -157,9 +164,10 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** o consumidor fala só HTTPS com Keycloak e APIs e valida o
   certificado do servidor; nunca desliga a verificação (`-k`,
   `verify=False`, `insecureSkipTLSVerify`).
-- **Como é imposta:** o Keycloak roda em modo produção com HTTP desligado; as
+- **Como imponho:** rodo o Keycloak em modo produção com HTTP desligado; as
   APIs e o Grafana só escutam TLS; as APIs buscam o JWKS só por HTTPS,
-  validando o certificado do Keycloak. Não há porta HTTP publicada.
+  validando o certificado do Keycloak, para que ninguém no caminho troque as
+  chaves. Não publiquei porta HTTP.
 - **Evidência:** `test_keycloak.py` (`test_endpoint_de_token_nao_responde_sem_tls`);
   `test_validador_jwt.py` (`test_jwks_so_e_obtido_por_tls`);
   [`tests/infra/test_isolamento.py`](../tests/infra/test_isolamento.py)
@@ -172,10 +180,11 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
   `curl --cacert` ou `SSL_CERT_FILE`), sem instalá-la no sistema. Os
   certificados valem para `localhost`, `127.0.0.1` e o nome do serviço na
   rede interna.
-- **Como é imposta:** a AC e os certificados são gerados por
+- **Como imponho:** gero a AC e os certificados por
   [`infra/tls/gerar-certificados.sh`](../infra/tls/gerar-certificados.sh)
-  com OpenSSL (001 TD-004); a chave privada da AC fica só legível pelo dono e
-  fora do Git.
+  com OpenSSL (001 TD-004); deixo a chave privada da AC só legível pelo dono
+  e fora do Git. Pedi confiança explícita, sem instalar a AC no sistema,
+  para que ela valha só para quem a usa de propósito.
 - **Evidência:** [`tests/infra/test_certificados.py`](../tests/infra/test_certificados.py)
   (`test_certificado_valida_contra_a_ac_local`,
   `test_certificado_nao_valida_contra_outra_ac`,
@@ -186,7 +195,7 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** o segredo do cliente técnico só trafega no corpo da requisição
   de token, por TLS. Não vai para código, URL, repositório nem log; o
   `access_token` também não vai para log.
-- **Como é imposta:** os segredos dos clientes vêm de `infra/.env`
+- **Como imponho:** os segredos dos clientes vêm de `infra/.env`
   (`KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS`, `KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS`),
   ignorado pelo Git, e entram no realm só na importação. Do lado das APIs, os
   logs redigem `Authorization`, padrões de JWT e de `Bearer`, e as mensagens
@@ -202,8 +211,9 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** quem instala o ambiente copia [`.env.example`](../.env.example)
   para `infra/.env`, com permissão `600`, e preenche cada valor com um segredo
   próprio (o modelo sugere `openssl rand -hex 24`).
-- **Como é imposta:** o modelo só tem nomes e valores vazios; o compose
-  recusa subir com variável obrigatória vazia (`${VAR:?...}`).
+- **Como imponho:** deixei no modelo só nomes e valores vazios, e o compose
+  recusa subir com variável obrigatória vazia (`${VAR:?...}`), para que
+  ninguém suba o ambiente com senha padrão.
 - **Evidência:** `test_segredos.py` (`test_modelo_nao_traz_valor_real`,
   `test_modelo_declara_toda_variavel_obrigatoria_do_compose`).
 
@@ -212,7 +222,7 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
 - **Regra:** registro e consulta usam clientes técnicos diferentes; um
   cliente não é compartilhado entre funções. Do lado da solução, cada
   componente interno também tem identidade própria.
-- **Como é imposta:** dois clientes técnicos com escopos disjuntos de
+- **Como imponho:** criei dois clientes técnicos com escopos disjuntos de
   operação; administração do Keycloak no realm `master` (`admin-cashflow`),
   separada dos clientes; um papel PostgreSQL e um usuário RabbitMQ por
   componente, com privilégio mínimo (tabela completa em
@@ -229,16 +239,16 @@ imposta" é o que a solução faz, inclusive quando o consumidor erra;
   `cliente-consultas` consulta todos os saldos e lançamentos. O segredo do
   cliente equivale ao acesso completo às operações do seu escopo e deve ser
   protegido como tal.
-- **Como é imposta:** não há API Gateway, papéis ou atributos (001 D-001);
-  multiempresa está fora do escopo (INFRA - Fora do escopo). Não há limite
-  de taxa por cliente nas APIs nem lista de revogação: um token comprometido
-  vale até expirar (300 s).
-- **Evidência:** ausência verificada no código das APIs e no compose; não há
-  teste, por ser ausência deliberada.
+- **Como imponho:** não há API Gateway, papéis ou atributos (001 D-001),
+  porque INFRA 5.12 os exclui; multiempresa está fora do escopo (INFRA - Fora
+  do escopo). Não criei limite de taxa por cliente nas APIs nem lista de
+  revogação: um token comprometido vale até expirar (300 s).
+- **Evidência:** verifiquei a ausência no código das APIs e no compose; não
+  escrevi teste, por ser ausência deliberada.
 
 ## Respostas e conduta do consumidor
 
-Contrato de erros das duas APIs
+Este é o contrato de erros que defini nas duas APIs
 ([lançamentos](../services/lancamentos/adaptadores/http/app.py),
 [consolidado](../services/consolidado/adaptadores/http/app.py)), no que toca
 à segurança e ao consumo. O corpo de erro traz o campo `erro`.
@@ -253,7 +263,8 @@ Contrato de erros das duas APIs
 
 ## Regras complementares
 
-Não decorrem de INFRA §5, mas fazem parte do consumo seguro:
+Não decorrem de INFRA §5, mas as incluí porque fazem parte do consumo
+seguro:
 
 - **Idempotência no registro:** todo `POST /v1/lancamentos` leva
   `Idempotency-Key`. A repetição idêntica devolve a resposta original, sem
@@ -264,8 +275,8 @@ Não decorrem de INFRA §5, mas fazem parte do consumo seguro:
   caracteres entre letras, dígitos, `.`, `_` e `-`) para rastrear a chamada
   nos logs; valor fora do formato é substituído por um UUID gerado pela API,
   para que o cliente não injete texto arbitrário nos logs.
-- **Dados mínimos no pedido:** a API de lançamentos recusa campo não previsto
-  no corpo (422), e a descrição e o valor nunca vão para log.
+- **Dados mínimos no pedido:** fiz a API de lançamentos recusar campo não
+  previsto no corpo (422), e a descrição e o valor nunca vão para log.
 
 ## Exemplo de consumo
 
@@ -295,8 +306,8 @@ Sem o cabeçalho, a mesma consulta devolve 401; com esse token, um
 
 ## Fora desta entrega
 
-Pontos conhecidos, aceitos pelas fontes ou pelos ADRs, a tratar como
-evolução:
+São pontos que conheço e aceitei, pelas fontes ou pelos ADRs, e que trato
+como evolução:
 
 - Revogação imediata de token (hoje vale até expirar, 300 s;
   [ADR-008](adr/ADR-008-keycloak-client-credentials-jwt.md)).
@@ -307,3 +318,8 @@ evolução:
   local e o `infra/.env` atendem só ao desenvolvimento (INFRA 5.8, 5.9).
 - Política numérica de retenção dos logs e das respostas idempotentes
   (INFRA 7.7, pendente).
+- Limite de tamanho do corpo da requisição e de `descricao` no registro: um
+  cliente com token válido pode enviar corpos de vários megabytes, que ficam
+  gravados no livro imutável. O tamanho máximo é decisão de negócio
+  pendente; registrei a lacuna em
+  [`evolucoes.md`](evolucoes.md#lacunas-conhecidas-da-implementação).
