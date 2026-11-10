@@ -19,9 +19,12 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from livro_descartavel import livro_descartavel
-from test_api_http_livro import Api, _api_sobre, _token
-from test_api_http_livro import pytestmark as pytestmark
+from lancamentos.tests.integracao import test_api_http_livro
+from lancamentos.tests.integracao.livro_descartavel import livro_descartavel
+from lancamentos.tests.integracao.test_api_http_livro import Api, _api_sobre, _token
+
+# Mesmas marcas (e mesma condição de pulo) dos testes HTTP contra o livro.
+pytestmark = test_api_http_livro.pytestmark
 
 
 @pytest.fixture(scope="module")
@@ -146,9 +149,7 @@ def test_data_inicio_maior_que_data_fim_e_422(api: Api, token_consulta: str) -> 
     assert resposta.json()["campo"] == "data_inicio"
 
 
-def test_token_com_registrar_sem_consultar_e_403(
-    api: Api, token_registro: str
-) -> None:
+def test_token_com_registrar_sem_consultar_e_403(api: Api, token_registro: str) -> None:
     resposta = _listar(
         api, token_registro, data_inicio="2031-03-01", data_fim="2031-03-31"
     )

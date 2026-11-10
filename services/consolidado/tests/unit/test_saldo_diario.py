@@ -81,9 +81,7 @@ def test_saldo_parte_dos_totais_ja_persistidos() -> None:
     saldo = SaldoDiario(DIA, Decimal("250.00"), Decimal("300.00"))
 
     assert saldo.saldo_dia == Decimal("-50.00")
-    assert saldo.aplicar(_contribuicao("DEBITO", "0.50")).saldo_dia == Decimal(
-        "-50.50"
-    )
+    assert saldo.aplicar(_contribuicao("DEBITO", "0.50")).saldo_dia == Decimal("-50.50")
 
 
 def test_contribuicao_de_outro_dia_e_recusada() -> None:
@@ -109,7 +107,7 @@ def test_dia_do_saldo_e_a_data_do_lancamento_sem_conversao_de_fuso() -> None:
     ("creditos", "debitos"),
     [
         (Decimal("-0.01"), Decimal(0)),
-        (Decimal(0), Decimal("-1")),
+        (Decimal(0), Decimal(-1)),
         (Decimal("NaN"), Decimal(0)),
         (10, Decimal(0)),
     ],

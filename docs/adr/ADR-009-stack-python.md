@@ -110,10 +110,14 @@ o mesmo laço de eventos, sem threads para I/O.
   10.2.2, Alembic 1.20.1, PyJWT 2.15.1, prometheus-client 0.26.0, pytest
   9.2.0. Ferramentas da máquina usadas nos testes: uv 0.13.7 e k6 v2.3.0
   ([relatório de carga](../testes/carga-consolidado.md#recursos-da-máquina)).
-- Especificado e implementado: Ruff e mypy são executados como ferramentas
-  (`uvx ruff`, `uv run --with mypy mypy`), sem entrar no `uv.lock`; o script
-  único de verificação previsto no steering (`scripts/verificar.sh`) não foi
-  criado.
+- Implementado: Ruff 0.17.4 e mypy 2.4.1 estão fixados no grupo `dev` e no
+  `uv.lock`, com `[tool.ruff]` (`required-version`) e `[tool.mypy]`
+  (`strict`, produção e testes) no `pyproject.toml` da raiz. Até 2026-11-10
+  rodavam como ferramentas avulsas (`uvx ruff`), e o mesmo commit passava ou
+  falhava conforme a versão do dia (review da spec 001). Especificado e não
+  implementado: o script único de verificação previsto no steering
+  (`scripts/verificar.sh`); lint, tipos e testes rodam por comandos
+  separados.
 - As versões das imagens de contêiner seguem 001 TD-007
   ([ADR-010](ADR-010-docker-compose-local.md)).
 - Gatilho de revisão: meta de vazão que um processo Python por API não

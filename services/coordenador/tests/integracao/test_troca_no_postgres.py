@@ -57,6 +57,10 @@ from consolidado.adaptadores.rabbitmq import (
     ProcessadorMensagens,
 )
 from consolidado.aplicacao import BarreiraConsumidor, ProjetarLancamento
+from consolidado.tests.integracao.consolidado_descartavel import (
+    Consolidado,
+    consolidado_descartavel,
+)
 from consolidado.worker.metricas import MetricasWorker
 from consolidado.worker.principal import (
     ConfiguracaoWorker,
@@ -64,7 +68,6 @@ from consolidado.worker.principal import (
     banco_pronto_de,
     fabrica_de_conexao,
 )
-from consolidado_descartavel import Consolidado, consolidado_descartavel
 from coordenador.adaptadores.postgres import (
     CHAVE_BLOQUEIO_OPERACAO,
     TransacaoGeracoesPostgres,
@@ -75,7 +78,7 @@ from coordenador.aplicacao import ConfiguracaoBarreira, TrocarGeracao
 from coordenador.cli import main
 from observabilidade import Metricas
 from psycopg_pool import AsyncConnectionPool
-from rabbitmq_descartavel import Broker, rabbitmq_descartavel
+from relay.tests.integracao.rabbitmq_descartavel import Broker, rabbitmq_descartavel
 
 pytestmark = pytest.mark.skipif(
     shutil.which("docker") is None, reason="docker ausente no PATH"

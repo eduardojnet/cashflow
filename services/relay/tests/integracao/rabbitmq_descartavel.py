@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import aio_pika
-from livro_descartavel import docker
+from lancamentos.tests.integracao.livro_descartavel import docker
 
 RAIZ = Path(__file__).resolve().parents[4]
 COMPOSE = RAIZ / "infra/compose.yaml"

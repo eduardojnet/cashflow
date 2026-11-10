@@ -194,14 +194,17 @@ def test_checkpoint_e_lacunas_viram_medidores_por_geracao() -> None:
     observador = MetricasWorker(metricas)
 
     # Os medidores por geração só aparecem com a primeira leitura (004-T4).
-    assert metricas.registro.get_sample_value(
-        "cashflow_checkpoint_posicao", {"geracao": "1"}
-    ) is None
+    assert (
+        metricas.registro.get_sample_value(
+            "cashflow_checkpoint_posicao", {"geracao": "1"}
+        )
+        is None
+    )
     observador.checkpoint(EstadoCheckpoint(geracao_id=1, posicao_continua=2, lacunas=1))
     observador.checkpoint(EstadoCheckpoint(geracao_id=1, posicao_continua=4, lacunas=0))
 
     rotulos = {"geracao": "1"}
-    assert metricas.registro.get_sample_value(
-        "cashflow_checkpoint_posicao", rotulos
-    ) == 4
+    assert (
+        metricas.registro.get_sample_value("cashflow_checkpoint_posicao", rotulos) == 4
+    )
     assert metricas.registro.get_sample_value("cashflow_lacunas", rotulos) == 0

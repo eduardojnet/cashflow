@@ -420,11 +420,11 @@ class Ambiente:
 
         # Saldo materializado da geração ativa, sem duplicar nem perder.
         no_consolidado = {}
-        for data, creditos, debitos, saldo_dia in self.da_geracao_ativa(
+        for data, creditos_dia, debitos_dia, saldo_dia in self.da_geracao_ativa(
             "saldo_diario", "t.data, t.total_creditos, t.total_debitos, t.saldo_dia"
         ):
-            assert Decimal(saldo_dia) == Decimal(creditos) - Decimal(debitos)
-            no_consolidado[data] = (Decimal(creditos), Decimal(debitos))
+            assert Decimal(saldo_dia) == Decimal(creditos_dia) - Decimal(debitos_dia)
+            no_consolidado[data] = (Decimal(creditos_dia), Decimal(debitos_dia))
         assert no_consolidado == esperado
 
         # O mesmo saldo pela API, com acumulado e checkpoint (FR-004).
@@ -590,8 +590,10 @@ def test_queda_do_consumidor_com_mensagens_sem_ack(ambiente: Ambiente) -> None:
     # Queda do consumidor: SIGKILL, sem desligamento ordenado.
     ambiente.exigir("kill", "worker")
     _aguardar(
-        lambda: ambiente.fila()
-        == Fila(prontas=quantidade, nao_confirmadas=0, consumidores=0),
+        lambda: (
+            ambiente.fila()
+            == Fila(prontas=quantidade, nao_confirmadas=0, consumidores=0)
+        ),
         30,
         "mensagens sem ACK devolvidas à fila",
     )
@@ -640,8 +642,10 @@ def test_perda_de_ack_depois_do_commit(ambiente: Ambiente) -> None:
 
     # ACK perdido: efeito gravado e mensagem ainda na fila (persistente).
     _aguardar(
-        lambda: ambiente.fila()
-        == Fila(prontas=quantidade, nao_confirmadas=0, consumidores=0),
+        lambda: (
+            ambiente.fila()
+            == Fila(prontas=quantidade, nao_confirmadas=0, consumidores=0)
+        ),
         30,
         "mensagens com ACK perdido de volta à fila",
     )

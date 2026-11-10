@@ -56,10 +56,13 @@ from consolidado.adaptadores.http.principal import criar_app_do_ambiente
 from consolidado.adaptadores.logs import FormatadorJson
 from consolidado.adaptadores.postgres import UnidadeDeTrabalhoProjecaoPostgres
 from consolidado.aplicacao import Desfecho, MensagemEvento, ProjetarLancamento
+from consolidado.tests.integracao.consolidado_descartavel import (
+    Consolidado,
+    consolidado_descartavel,
+)
 from consolidado.worker.principal import fabrica_de_conexao
-from consolidado_descartavel import Consolidado, consolidado_descartavel
 from fastapi.testclient import TestClient
-from livro_descartavel import docker
+from lancamentos.tests.integracao.livro_descartavel import docker
 from observabilidade import Metricas
 from psycopg import AsyncConnection
 from psycopg_pool import AsyncConnectionPool

@@ -22,6 +22,29 @@ seguranca = { workspace = true }
 [tool.pytest.ini_options]
 pythonpath = ["services"]
 
+# Regras padrão da versão fixada no grupo `dev`. `required-version` faz o
+# `uvx ruff` de outra versão parar com erro em vez de aplicar outras regras.
+[tool.ruff]
+required-version = "==0.17.4"
+target-version = "py312"
+
+# `uv run mypy` sem argumentos verifica o código de produção e os testes,
+# com os mesmos nomes de módulo que o pytest usa (`pythonpath`): as bases
+# explícitas fazem `services/lancamentos/dominio/x.py` virar
+# `lancamentos.dominio.x`. Os testes importam os auxiliares pelo caminho
+# completo do pacote (`lancamentos.tests.integracao.livro_descartavel`),
+# não por `sys.path`.
+[tool.mypy]
+python_version = "3.12"
+strict = true
+explicit_package_bases = true
+mypy_path = [
+    "services",
+    "packages/observabilidade/src",
+    "packages/seguranca/src",
+]
+files = ["services", "packages", "tests"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.2.0",
@@ -31,6 +54,11 @@ dev = [
     "seguranca",
     # Cliente do TestClient do FastAPI nos testes da API (002-T5).
     "httpx2>=2.16.0",
+    # Lint, formatação e tipos (Eduardo, ST-Q-011). Versões exatas porque o
+    # conjunto de regras muda entre versões: sem fixar, o mesmo commit
+    # passava ou falhava conforme a data (review 001, Issue 1).
+    "mypy==2.4.1",
+    "ruff==0.17.4",
     {include-group = "migracoes"},
     {include-group = "lancamentos"},
     {include-group = "relay"},

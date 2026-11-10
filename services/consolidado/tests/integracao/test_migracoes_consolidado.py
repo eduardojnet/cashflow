@@ -402,9 +402,7 @@ def test_consolidado_operacao_le_o_controle_das_geracoes(tabela: str) -> None:
     assert resultado.returncode == 0, resultado.stderr
 
 
-@pytest.mark.parametrize(
-    "tabela", [t for t in TABELAS if t not in LIDAS_PELA_OPERACAO]
-)
+@pytest.mark.parametrize("tabela", [t for t in TABELAS if t not in LIDAS_PELA_OPERACAO])
 def test_consolidado_operacao_nao_le_dados_internos_da_projecao(tabela: str) -> None:
     resultado = _psql("consolidado_operacao", f"SELECT 1 FROM {tabela} LIMIT 1")
 

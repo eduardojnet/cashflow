@@ -17,7 +17,7 @@ from consolidado.aplicacao import (
     ListarSaldos,
     SaldoConsultado,
 )
-from test_api_consolidado_http import LeituraFalsa
+from consolidado.tests.unit.test_api_consolidado_http import LeituraFalsa
 
 
 def test_cursor_codifica_e_decodifica_a_ultima_data() -> None:

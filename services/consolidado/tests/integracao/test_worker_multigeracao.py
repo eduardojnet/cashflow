@@ -56,6 +56,10 @@ from consolidado.aplicacao import (
     TransacaoProjecao,
     UnidadeDeTrabalhoProjecao,
 )
+from consolidado.tests.integracao.consolidado_descartavel import (
+    Consolidado,
+    consolidado_descartavel,
+)
 from consolidado.worker.metricas import MetricasWorker
 from consolidado.worker.principal import (
     ConfiguracaoWorker,
@@ -63,10 +67,9 @@ from consolidado.worker.principal import (
     banco_pronto_de,
     fabrica_de_conexao,
 )
-from consolidado_descartavel import Consolidado, consolidado_descartavel
 from observabilidade import Metricas
 from psycopg_pool import AsyncConnectionPool
-from rabbitmq_descartavel import Broker, rabbitmq_descartavel
+from relay.tests.integracao.rabbitmq_descartavel import Broker, rabbitmq_descartavel
 
 # Topologia de design 003 §4, a mesma de definicoes.modelo.json.
 EXCHANGE = "cashflow.lancamentos"

@@ -44,7 +44,7 @@ def test_evento_v1_gera_a_contribuicao_do_lancamento() -> None:
     assert evento.evento_id == EVENTO_ID
     assert evento.registrado_em == datetime(2026, 11, 5, 13, 45, 10, 123456, UTC)
     assert evento.contribuicao == Contribuicao(
-        LANCAMENTO_ID, 123, date(2026, 11, 5), TipoLancamento.CREDITO, Decimal("100")
+        LANCAMENTO_ID, 123, date(2026, 11, 5), TipoLancamento.CREDITO, Decimal(100)
     )
 
 

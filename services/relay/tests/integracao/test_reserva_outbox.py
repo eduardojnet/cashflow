@@ -26,7 +26,7 @@ import psycopg
 import pytest
 from lancamentos.adaptadores.postgres import UnidadeDeTrabalhoLivroPostgres
 from lancamentos.aplicacao import RegistrarLancamentoCmd
-from livro_descartavel import Livro, livro_descartavel
+from lancamentos.tests.integracao.livro_descartavel import Livro, livro_descartavel
 from relay.adaptadores.postgres import (
     EventoReservado,
     FabricaConexao,
@@ -278,8 +278,10 @@ def test_publicado_ou_com_tentativa_futura_nao_e_reservado(livro: Livro) -> None
         ("DELETE FROM outbox", "outbox"),
         ("TRUNCATE outbox", "outbox"),
         (
-            "INSERT INTO outbox (evento_id, lancamento_id, posicao, tipo_evento,"
-            " payload) VALUES (gen_random_uuid(), gen_random_uuid(), 1, 'x', '{}')",
+            (
+                "INSERT INTO outbox (evento_id, lancamento_id, posicao, tipo_evento,"
+                " payload) VALUES (gen_random_uuid(), gen_random_uuid(), 1, 'x', '{}')"
+            ),
             "outbox",
         ),
         ("SELECT 1 FROM lancamento", "lancamento"),
@@ -298,9 +300,11 @@ def test_publicado_ou_com_tentativa_futura_nao_e_reservado(livro: Livro) -> None
 def test_livro_relay_so_atualiza_metadados_da_outbox(
     livro: Livro, comando: str, tabela: str
 ) -> None:
-    with psycopg.connect(livro.conninfo("livro_relay")) as conexao:
-        with pytest.raises(psycopg.errors.InsufficientPrivilege) as erro:
-            conexao.execute(comando)
+    with (
+        psycopg.connect(livro.conninfo("livro_relay")) as conexao,
+        pytest.raises(psycopg.errors.InsufficientPrivilege) as erro,
+    ):
+        conexao.execute(comando)
 
     assert f"permission denied for table {tabela}" in str(erro.value)
 

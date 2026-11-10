@@ -37,7 +37,11 @@ import pytest
 from fastapi.testclient import TestClient
 from lancamentos.adaptadores.http import FormatadorJson
 from lancamentos.adaptadores.http.principal import criar_app_do_ambiente
-from livro_descartavel import Livro, docker, livro_descartavel
+from lancamentos.tests.integracao.livro_descartavel import (
+    Livro,
+    docker,
+    livro_descartavel,
+)
 from observabilidade import Metricas
 
 URL = os.environ.get("KEYCLOAK_URL")

@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import psycopg
-from livro_descartavel import docker
+from lancamentos.tests.integracao.livro_descartavel import docker
 from psycopg.conninfo import make_conninfo
 
 RAIZ = Path(__file__).resolve().parents[4]
@@ -102,8 +102,7 @@ def consolidado_descartavel(rotulo: str) -> Iterator[Consolidado]:
     env = {
         **os.environ,
         **{
-            variavel: senhas[papel]
-            for papel, variavel in PAPEIS_DO_CONSOLIDADO.items()
+            variavel: senhas[papel] for papel, variavel in PAPEIS_DO_CONSOLIDADO.items()
         },
     }
     variaveis = [

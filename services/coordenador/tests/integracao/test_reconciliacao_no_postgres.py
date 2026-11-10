@@ -43,15 +43,18 @@ import pytest
 from consolidado.adaptadores.postgres import UnidadeDeTrabalhoProjecaoPostgres
 from consolidado.adaptadores.rabbitmq.consumidor import decodificar
 from consolidado.aplicacao import Desfecho, ProjetarLancamento
+from consolidado.tests.integracao.consolidado_descartavel import (
+    Consolidado,
+    consolidado_descartavel,
+)
 from consolidado.worker.principal import fabrica_de_conexao
-from consolidado_descartavel import Consolidado, consolidado_descartavel
 from coordenador.cli import main
 from lancamentos.adaptadores.postgres import (
     FabricaConexao,
     UnidadeDeTrabalhoLivroPostgres,
 )
 from lancamentos.aplicacao import RegistrarLancamentoCmd
-from livro_descartavel import Livro, livro_descartavel
+from lancamentos.tests.integracao.livro_descartavel import Livro, livro_descartavel
 from psycopg_pool import AsyncConnectionPool
 
 pytestmark = pytest.mark.skipif(

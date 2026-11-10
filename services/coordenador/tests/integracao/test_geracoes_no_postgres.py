@@ -18,7 +18,10 @@ from datetime import date
 
 import psycopg
 import pytest
-from consolidado_descartavel import Consolidado, consolidado_descartavel
+from consolidado.tests.integracao.consolidado_descartavel import (
+    Consolidado,
+    consolidado_descartavel,
+)
 from coordenador.dominio import EstadoGeracao, transicao_valida
 from psycopg import sql
 

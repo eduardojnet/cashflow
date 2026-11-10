@@ -296,6 +296,9 @@ Detalhes, níveis e a última execução completa:
 ```bash
 uv sync
 
+# Lint, formatação e tipos (versões fixadas no grupo dev)
+uv run ruff check . && uv run ruff format --check . && uv run mypy
+
 # Unidade: sem Docker, em segundos
 uv run pytest services/*/tests/unit packages/*/tests
 

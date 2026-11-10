@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
-from test_api_http import (
+from lancamentos.tests.unit.test_api_http import (
     DESCRICAO,
     TOKEN_CONSULTA,
     TOKEN_REGISTRO,
@@ -17,7 +17,7 @@ from test_api_http import (
     Api,
     montar_api,
 )
-from test_listar_lancamentos import LivroEmMemoria
+from lancamentos.tests.unit.test_listar_lancamentos import LivroEmMemoria
 
 
 @pytest.fixture

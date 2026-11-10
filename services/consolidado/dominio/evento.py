@@ -36,9 +36,7 @@ def _instante_de(bruto: object) -> datetime:
         try:
             bruto = datetime.fromisoformat(bruto)
         except ValueError:
-            raise CampoInvalido(
-                "registrado_em", "deve ser instante ISO 8601"
-            ) from None
+            raise CampoInvalido("registrado_em", "deve ser instante ISO 8601") from None
     if not isinstance(bruto, datetime):
         raise CampoInvalido("registrado_em", "deve ser instante ISO 8601")
     if bruto.utcoffset() is None:

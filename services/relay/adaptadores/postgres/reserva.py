@@ -76,13 +76,12 @@ class ReservaOutboxPostgres:
 
     async def reservar(self) -> list[EventoReservado]:
         """Reserva até `lote` eventos pendentes, em ordem de posição."""
-        async with self._conexao() as conexao:
-            async with conexao.transaction():
-                cursor = conexao.cursor(row_factory=class_row(EventoReservado))
-                await cursor.execute(
-                    _RESERVAR,
-                    {"lote": self._lote, "dono": self._dono, "lease": self._lease},
-                )
-                eventos = await cursor.fetchall()
+        async with self._conexao() as conexao, conexao.transaction():
+            cursor = conexao.cursor(row_factory=class_row(EventoReservado))
+            await cursor.execute(
+                _RESERVAR,
+                {"lote": self._lote, "dono": self._dono, "lease": self._lease},
+            )
+            eventos = await cursor.fetchall()
         # RETURNING não preserva a ordem da CTE.
         return sorted(eventos, key=lambda evento: evento.posicao)

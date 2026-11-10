@@ -53,6 +53,10 @@ from consolidado.aplicacao import (
     TransacaoProjecao,
     UnidadeDeTrabalhoProjecao,
 )
+from consolidado.tests.integracao.consolidado_descartavel import (
+    Consolidado,
+    consolidado_descartavel,
+)
 from consolidado.worker.metricas import MetricasWorker
 from consolidado.worker.principal import (
     ConfiguracaoWorker,
@@ -60,10 +64,9 @@ from consolidado.worker.principal import (
     banco_pronto_de,
     fabrica_de_conexao,
 )
-from consolidado_descartavel import Consolidado, consolidado_descartavel
 from observabilidade import Metricas
 from psycopg_pool import AsyncConnectionPool
-from rabbitmq_descartavel import Broker, rabbitmq_descartavel
+from relay.tests.integracao.rabbitmq_descartavel import Broker, rabbitmq_descartavel
 
 # Topologia de design 003 §4, a mesma de definicoes.modelo.json.
 EXCHANGE = "cashflow.lancamentos"
@@ -150,9 +153,7 @@ async def _publicar(broker: Broker, *mensagens: tuple[bytes, str | None]) -> Non
 
 
 def _publicar_eventos(broker: Broker, *eventos: dict[str, object]) -> None:
-    asyncio.run(
-        _publicar(broker, *((_corpo(e), str(e["evento_id"])) for e in eventos))
-    )
+    asyncio.run(_publicar(broker, *((_corpo(e), str(e["evento_id"])) for e in eventos)))
 
 
 async def _esvaziar(broker: Broker) -> None:

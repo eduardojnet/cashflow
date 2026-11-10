@@ -34,9 +34,12 @@ from consolidado.aplicacao import (
     MensagemEvento,
     ProjetarLancamento,
 )
+from consolidado.tests.integracao.consolidado_descartavel import (
+    Consolidado,
+    consolidado_descartavel,
+)
 from consolidado.worker.metricas import MetricasWorker
 from consolidado.worker.principal import fabrica_de_conexao
-from consolidado_descartavel import Consolidado, consolidado_descartavel
 from observabilidade import Metricas
 from psycopg_pool import AsyncConnectionPool
 

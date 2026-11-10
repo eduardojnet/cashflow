@@ -39,9 +39,14 @@ from consolidado.adaptadores.http.fase import atualizar_fase
 from consolidado.adaptadores.http.principal import leitor_de_fase
 from consolidado.adaptadores.postgres import UnidadeDeTrabalhoProjecaoPostgres
 from consolidado.aplicacao import Desfecho, MensagemEvento, ProjetarLancamento
+from consolidado.tests.integracao.consolidado_descartavel import (
+    PAPEIS_DO_CONSOLIDADO,
+    Consolidado,
+)
+from consolidado.tests.integracao.consolidado_descartavel import (
+    consolidado_descartavel as descartavel,
+)
 from consolidado.worker.principal import fabrica_de_conexao
-from consolidado_descartavel import PAPEIS_DO_CONSOLIDADO, Consolidado
-from consolidado_descartavel import consolidado_descartavel as descartavel
 from coordenador.adaptadores.postgres import abridor_de_transacao
 from coordenador.aplicacao import ConsultarSituacao, IniciarReconstrucao
 from coordenador.cli import main

@@ -39,7 +39,7 @@ from lancamentos.aplicacao import (
     RegistrarLancamentoCmd,
     RespostaRegistro,
 )
-from livro_descartavel import Livro, livro_descartavel
+from lancamentos.tests.integracao.livro_descartavel import Livro, livro_descartavel
 
 CONCORRENTES = 100
 

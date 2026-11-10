@@ -31,8 +31,7 @@ import psycopg
 import pytest
 from lancamentos.adaptadores.postgres import UnidadeDeTrabalhoLivroPostgres
 from lancamentos.aplicacao import RegistrarLancamentoCmd
-from livro_descartavel import Livro, livro_descartavel
-from rabbitmq_descartavel import FILA, Broker, rabbitmq_descartavel
+from lancamentos.tests.integracao.livro_descartavel import Livro, livro_descartavel
 from relay.adaptadores.postgres import (
     FabricaConexao,
     RegistroPublicacaoPostgres,
@@ -41,6 +40,11 @@ from relay.adaptadores.postgres import (
 from relay.adaptadores.rabbitmq import PublicadorRabbitMQ
 from relay.aplicacao import PoliticaRetentativa, PublicarPendentes, ResultadoPublicacao
 from relay.comandos.republicar import main
+from relay.tests.integracao.rabbitmq_descartavel import (
+    FILA,
+    Broker,
+    rabbitmq_descartavel,
+)
 
 SERVICOS = Path(__file__).resolve().parents[3]
 # Lease curto: o evento recém-publicado volta à reserva logo após reaberto.

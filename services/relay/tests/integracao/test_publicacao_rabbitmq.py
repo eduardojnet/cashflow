@@ -30,8 +30,11 @@ import psycopg
 import pytest
 from lancamentos.adaptadores.postgres import UnidadeDeTrabalhoLivroPostgres
 from lancamentos.aplicacao import RegistrarLancamentoCmd
-from livro_descartavel import Livro, docker, livro_descartavel
-from rabbitmq_descartavel import FILA, Broker, rabbitmq_descartavel
+from lancamentos.tests.integracao.livro_descartavel import (
+    Livro,
+    docker,
+    livro_descartavel,
+)
 from relay.adaptadores.postgres import (
     FabricaConexao,
     RegistroPublicacaoPostgres,
@@ -44,6 +47,11 @@ from relay.aplicacao import (
     PublicarPendentes,
     ResultadoPublicacao,
     ResumoCiclo,
+)
+from relay.tests.integracao.rabbitmq_descartavel import (
+    FILA,
+    Broker,
+    rabbitmq_descartavel,
 )
 
 TIMEOUT_CONFIRMACAO = 10.0

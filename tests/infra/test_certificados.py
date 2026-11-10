@@ -25,7 +25,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def _openssl(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["openssl", *args], capture_output=True, text=True)
+    # Sem `check`: os testes conferem o código de saída e o stderr.
+    return subprocess.run(
+        ["openssl", *args], check=False, capture_output=True, text=True
+    )
 
 
 def _gerar(destino: Path) -> None:
@@ -105,10 +108,12 @@ def test_handshake_tls_com_a_ac_local(saida: Path) -> None:
 
         tarefa = threading.Thread(target=aceitar)
         tarefa.start()
-        with socket.create_connection(("127.0.0.1", porta)) as bruto:
-            with cliente_ctx.wrap_socket(bruto, server_hostname="localhost") as tls:
-                assert tls.version() in ("TLSv1.2", "TLSv1.3")
-                tls.sendall(b"x")
+        with (
+            socket.create_connection(("127.0.0.1", porta)) as bruto,
+            cliente_ctx.wrap_socket(bruto, server_hostname="localhost") as tls,
+        ):
+            assert tls.version() in ("TLSv1.2", "TLSv1.3")
+            tls.sendall(b"x")
         tarefa.join(timeout=5)
 
 
@@ -122,6 +127,9 @@ def test_handshake_tls_com_a_ac_local(saida: Path) -> None:
 )
 def test_saida_do_script_fica_fora_do_git(caminho: str) -> None:
     resultado = subprocess.run(
-        ["git", "check-ignore", "-q", caminho], cwd=RAIZ, capture_output=True
+        ["git", "check-ignore", "-q", caminho],
+        check=False,
+        cwd=RAIZ,
+        capture_output=True,
     )
     assert resultado.returncode == 0, f"{caminho} não está ignorado pelo Git"

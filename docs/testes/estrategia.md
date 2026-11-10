@@ -130,7 +130,13 @@ Com isso, os 1.149 testes pytest passaram nesta data (1.094 + 29 + 7 + 12 +
 7). O teste de carga, executado antes da suíte, também passou
 ([`relatorio-carga.md`](relatorio-carga.md)).
 
-Lint e tipos (Ruff e mypy) não fazem parte desta execução: as duas
-ferramentas não entram no `uv.lock` e são rodadas como ferramentas
-(`uvx ruff`, `uv run --with mypy mypy`), sem script único de verificação
-([ADR-009](../adr/ADR-009-stack-python.md)).
+Lint e tipos (Ruff e mypy) não fizeram parte desta execução. Desde
+2026-11-10, as duas ferramentas estão fixadas no grupo `dev` e rodam sem
+erro sobre produção e testes, sem script único de verificação
+([ADR-009](../adr/ADR-009-stack-python.md)):
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+```
