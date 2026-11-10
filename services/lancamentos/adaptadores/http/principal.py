@@ -18,14 +18,14 @@ Variáveis (ver infra/compose.yaml):
 
 import asyncio
 import os
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
 import psycopg
 from fastapi import FastAPI
-from observabilidade import Metricas
+from observabilidade import Metricas, medir_pool
 from psycopg import AsyncConnection
 from psycopg.conninfo import make_conninfo
 from psycopg_pool import AsyncConnectionPool, PoolTimeout
@@ -94,28 +94,6 @@ def criar_pool(configuracao: ConfiguracaoLivro) -> Pool:
     )
 
 
-def medir_pool(pool: Pool, metricas: Metricas) -> None:
-    """`cashflow_pool_conexoes{componente,estado}` lido do pool na coleta."""
-    medidor = metricas.medidor("cashflow_pool_conexoes")
-
-    def estatistica(chave: str) -> Callable[[], float]:
-        return lambda: pool.get_stats().get(chave, 0)
-
-    def em_uso() -> float:
-        estado = pool.get_stats()
-        return estado.get("pool_size", 0) - estado.get("pool_available", 0)
-
-    rotulos = {"componente": COMPONENTE}
-    medidor.labels(**rotulos, estado="total").set_function(estatistica("pool_size"))
-    medidor.labels(**rotulos, estado="disponivel").set_function(
-        estatistica("pool_available")
-    )
-    medidor.labels(**rotulos, estado="em_uso").set_function(em_uso)
-    medidor.labels(**rotulos, estado="aguardando").set_function(
-        estatistica("requests_waiting")
-    )
-
-
 def fabrica_de_conexao(pool: Pool) -> FabricaConexao:
     def conexao() -> AbstractAsyncContextManager[AsyncConnection[Any]]:
         return pool.connection()
@@ -163,7 +141,7 @@ def criar_app_do_ambiente(
     ambiente = os.environ if ambiente is None else ambiente
     metricas = Metricas() if metricas is None else metricas
     pool = criar_pool(ConfiguracaoLivro.de_ambiente(ambiente))
-    medir_pool(pool, metricas)
+    medir_pool(pool, metricas, COMPONENTE)
     validador = criar_validador_lancamentos(metricas, ambiente)
     registrar = RegistrarLancamento(
         UnidadeDeTrabalhoLivroPostgres(fabrica_de_conexao(pool))

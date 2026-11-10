@@ -6,6 +6,9 @@
 - `cashflow_relay_falhas_publicacao_total{resultado}`: publicações sem
   confirm positivo, por desfecho (007 TD-006). As quatro séries nascem com
   zero na subida, para o Prometheus ter dado mesmo sem falha.
+- `cashflow_pool_conexoes{componente="relay",estado}`: pool do livro, lido
+  na coleta por `observabilidade.medir_pool`, registrado em `__main__`
+  junto do pool (review 007, Issue 1). Esgotado, trava a publicação inteira.
 
 Mensagens prontas e não confirmadas vêm do plugin Prometheus do RabbitMQ
 (007 design §4), não daqui.

@@ -10,6 +10,7 @@ from observabilidade.catalogo import (
     TipoMetrica,
 )
 from observabilidade.metricas import Metricas, ServidorMetricas
+from observabilidade.pool import PoolComEstatisticas, medir_pool
 
 __all__ = [
     "CATALOGO",
@@ -18,7 +19,9 @@ __all__ = [
     "ErroCatalogo",
     "MetricaDesconhecida",
     "Metricas",
+    "PoolComEstatisticas",
     "RotuloNaoPermitido",
     "ServidorMetricas",
     "TipoMetrica",
+    "medir_pool",
 ]

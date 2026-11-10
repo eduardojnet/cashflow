@@ -37,10 +37,10 @@ from observabilidade.catalogo import ROTULOS_PERMITIDOS
 PROJETO = "cashflow"
 
 # INFRA 8.3, na ordem de 007 FR-001: item -> {métrica: jobs de origem}.
-# Origens do mapa de design 007 §4, com duas diferenças nos pools de conexão:
-# o coordenador roda como CLI, sem /metrics (design 007 §4), e o relay não
-# expõe o pool (003-T5 não o registrou; 003 design §12 não o lista). Espaço
-# em disco vem dos exporters e do plugin do RabbitMQ.
+# Origens do mapa de design 007 §4, com uma diferença nos pools de conexão:
+# o coordenador roda como CLI, sem /metrics (design 007 §4). O relay passou a
+# expor o pool na correção da review 007 (Issue 1). Espaço em disco vem dos
+# exporters e do plugin do RabbitMQ.
 METRICAS_INFRA_8_3: dict[str, dict[str, set[str]]] = {
     "backlog da outbox": {"cashflow_outbox_pendentes": {"relay"}},
     "idade do evento mais antigo": {
@@ -53,7 +53,12 @@ METRICAS_INFRA_8_3: dict[str, dict[str, set[str]]] = {
     "reentregas": {"cashflow_worker_reentregas_total": {"worker"}},
     "quarentena": {"cashflow_quarentena_total": {"worker"}},
     "pools de conexão": {
-        "cashflow_pool_conexoes": {"lancamentos-api", "consolidado-api", "worker"}
+        "cashflow_pool_conexoes": {
+            "lancamentos-api",
+            "consolidado-api",
+            "worker",
+            "relay",
+        }
     },
     "espaço em disco": {
         "pg_database_size_bytes": {"postgres-livro", "postgres-consolidado"},

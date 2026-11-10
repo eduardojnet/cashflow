@@ -13,7 +13,7 @@ import asyncio
 import os
 import signal
 
-from observabilidade import Metricas
+from observabilidade import Metricas, medir_pool
 
 from consolidado.adaptadores.logs import configurar_logging
 from consolidado.adaptadores.postgres import (
@@ -22,7 +22,7 @@ from consolidado.adaptadores.postgres import (
 )
 from consolidado.adaptadores.rabbitmq import ConsumidorRabbitMQ, ProcessadorMensagens
 from consolidado.aplicacao import BarreiraConsumidor, ProjetarLancamento
-from consolidado.worker.metricas import MetricasWorker, medir_pool
+from consolidado.worker.metricas import COMPONENTE, MetricasWorker
 from consolidado.worker.principal import (
     ConfiguracaoWorker,
     LacoWorker,
@@ -40,7 +40,7 @@ async def executar(configuracao: ConfiguracaoWorker) -> None:
     servidor_metricas = metricas.iniciar_servidor(configuracao.metricas_porta)
 
     pool = criar_pool(configuracao)
-    medir_pool(pool, metricas)
+    medir_pool(pool, metricas, COMPONENTE)
     conexao = fabrica_de_conexao(pool)
     projetar = ProjetarLancamento(
         UnidadeDeTrabalhoProjecaoPostgres(conexao), metricas_worker

@@ -14,7 +14,7 @@ import asyncio
 import os
 import signal
 
-from observabilidade import Metricas
+from observabilidade import Metricas, medir_pool
 
 from relay.adaptadores.http import ServidorSaude
 from relay.adaptadores.logs import configurar_logging
@@ -27,6 +27,7 @@ from relay.adaptadores.postgres import (
 from relay.adaptadores.rabbitmq import PublicadorRabbitMQ
 from relay.aplicacao import PublicarPendentes
 from relay.principal import (
+    COMPONENTE,
     ConfiguracaoRelay,
     LacoRelay,
     criar_pool,
@@ -41,6 +42,7 @@ async def executar(configuracao: ConfiguracaoRelay) -> None:
     servidor_metricas = metricas.iniciar_servidor(configuracao.metricas_porta)
 
     pool = criar_pool(configuracao)
+    medir_pool(pool, metricas, COMPONENTE)
     conexao = fabrica_de_conexao(pool)
     publicador = PublicadorRabbitMQ(
         configuracao.url_rabbitmq, configuracao.timeout_confirmacao_segundos

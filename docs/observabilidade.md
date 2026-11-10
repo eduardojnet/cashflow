@@ -97,7 +97,7 @@ instantâneo; contador = só cresce e volta a zero quando o processo reinicia.
 | 3 | Mensagens prontas e não confirmadas | `rabbitmq_detailed_queue_messages_ready` e `rabbitmq_detailed_queue_messages_unacked` (por `queue`) | RabbitMQ, plugin, família `queue_coarse_metrics` (`rabbitmq-filas`) | Mensageria > Mensagens prontas e não confirmadas por fila |
 | 4 | Reentregas | `cashflow_worker_reentregas_total` (contador) | worker (`worker`) | Mensageria > Reentregas, ao lado de `rabbitmq_global_messages_redelivered_total` do broker |
 | 5 | Quarentena | `cashflow_quarentena_total` (contador) | worker (`worker`) | Consolidado > Quarentena (total) e Quarentena por intervalo |
-| 6 | Pools de conexão | `cashflow_pool_conexoes` (medidor; `componente`, `estado` = `total`, `disponivel`, `em_uso`, `aguardando`) | API de lançamentos (`lancamentos-api`), API do consolidado (`consolidado-api`), worker (`worker`) | Recursos > Pools de conexão |
+| 6 | Pools de conexão | `cashflow_pool_conexoes` (medidor; `componente`, `estado` = `total`, `disponivel`, `em_uso`, `aguardando`) | API de lançamentos (`lancamentos-api`), API do consolidado (`consolidado-api`), worker (`worker`), relay (`relay`) | Recursos > Pools de conexão |
 | 7 | Espaço em disco | `pg_database_size_bytes` (por `datname`); `rabbitmq_disk_space_available_bytes` e `rabbitmq_disk_space_available_limit_bytes` | exporters (`postgres-livro`, `postgres-consolidado`); RabbitMQ, plugin (`rabbitmq`) | Recursos > Tamanho dos bancos; Recursos > Disco livre do RabbitMQ |
 | 8 | Geração ativa | `cashflow_geracao_ativa` (medidor) | API do consolidado (`consolidado-api`), atualizada a cada leitura do banco | Consolidado > Geração ativa |
 | 9 | Fase da reconstrução | `cashflow_reconstrucao_fase` (medidor, código da fase) | coordenador grava em `fase_reconstrucao`; a API do consolidado lê a cada 10 s (`FASE_INTERVALO_SEGUNDOS`) e publica (`consolidado-api`) | Reconstrução > Fase da reconstrução |
@@ -110,9 +110,9 @@ Diferenças em relação ao mapa de 007 design §4, verificadas no código e em
 
 - **Pools de conexão:** o mapa lista APIs, relay, worker e coordenador. O
   coordenador roda como comando de linha, sem `/metrics` (o próprio design
-  §4 já o diz). O relay não registra `cashflow_pool_conexoes` (003-T5 não o
-  implementou e 003 design §12 não o pede). Pendência aberta para a revisão
-  da spec 007, não resolvida aqui.
+  §4 já o diz). Os outros quatro registram o medidor pela mesma função,
+  `observabilidade.medir_pool`. O relay só passou a registrá-lo na correção
+  da review da spec 007, em 2026-11-10: 003-T5 não o tinha implementado.
 - **Mensagens prontas e não confirmadas e espaço em disco:** vêm de métricas
   nativas do plugin do RabbitMQ e do exporter do PostgreSQL, sem nome
   `cashflow_*`, como o mapa prevê.
