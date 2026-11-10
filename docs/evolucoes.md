@@ -1,10 +1,10 @@
 # Evoluções futuras
 
-O que ficou fora desta entrega e como evoluir. Atende a DES - Observações
-("descrições sobre o que você gostaria de ter implementado ou evoluções
-futuras para o sistema proposto") e parte da lista de INFRA - Fora do escopo
-atual. As specs ficam em `.ai/sdd/specs/`, pasta local que não é versionada
-(decisão 006 D-006).
+Aqui registro o que deixei fora desta entrega e como eu evoluiria a solução.
+Respondo a DES - Observações ("descrições sobre o que você gostaria de ter
+implementado ou evoluções futuras para o sistema proposto") e parto da lista
+de INFRA - Fora do escopo atual. Mantenho as specs em `.ai/sdd/specs/`, pasta
+local que não versiono (decisão 006 D-006).
 
 Fontes:
 
@@ -14,17 +14,17 @@ Fontes:
 Como ler:
 
 - **Nada deste documento está implementado.** A coluna "Como evoluir" é
-  Proposta: direção sugerida pelo autor, não decisão aprovada nem requisito.
+  Proposta: a direção que eu sugiro, não decisão aprovada nem requisito.
 - **Gatilho** é o fato que justificaria a evolução. Quando o gatilho já
-  consta de um ADR, o ADR é citado; a evolução não deve começar antes dele,
+  consta de um ADR, cito o ADR; não começaria a evolução antes do gatilho,
   pelo princípio P-011 (não acrescentar componente sem requisito que o
   exija).
-- Nenhum número novo é proposto aqui: metas de disponibilidade, RPO, RTO,
-  retenção e escala dependem de decisão de negócio (INFRA 7.7).
+- Não proponho nenhum número novo aqui, porque metas de disponibilidade,
+  RPO, RTO, retenção e escala dependem de decisão de negócio (INFRA 7.7).
 
 ## Fora do escopo de INFRA
 
-Os 12 itens de INFRA - Fora do escopo atual, na ordem da fonte.
+Percorro os 12 itens de INFRA - Fora do escopo atual, na ordem da fonte.
 
 | # | Item de INFRA | Situação nesta entrega | Gatilho | Como evoluir (Proposta) |
 |---|---------------|------------------------|---------|-------------------------|
@@ -43,7 +43,8 @@ Os 12 itens de INFRA - Fora do escopo atual, na ordem da fonte.
 
 ## Outras evoluções conhecidas
 
-Itens fora desta entrega por decisão registrada ou por gatilho de ADR.
+São itens que deixei fora desta entrega por decisão registrada ou por
+gatilho de ADR.
 
 ### Segurança
 
@@ -82,13 +83,13 @@ Itens fora desta entrega por decisão registrada ou por gatilho de ADR.
 
 ## Lacunas conhecidas da implementação
 
-O que foi especificado e não foi entregue, ou que as revisões de cada spec
-apontaram e segue aberto, registrado para não ser apresentado como
-implementado. Cada spec passou por uma revisão contra requisitos, desenho e
-código, com testes executados de novo, em 2026-11-09. As sete terminaram
-"aprovada com pendências". Os achados de severidade média foram corrigidos
-em 2026-11-10 (lista no fim desta seção). Os abertos são todos de baixa
-severidade.
+Aqui está o que especifiquei e não entreguei, ou que as revisões de cada
+spec apontaram e segue aberto. Registro tudo para não apresentar como
+implementado o que não está. Revisei cada spec contra requisitos, desenho e
+código, com os testes executados de novo, em 2026-11-09; as sete terminaram
+"aprovada com pendências". Corrigi os achados de severidade média em
+2026-11-10 (lista no fim desta seção). Os que deixei abertos são todos de
+baixa severidade, e para cada um digo o efeito e o que caberia fazer.
 
 | Lacuna aberta | Efeito | Origem |
 |---------------|--------|--------|
@@ -103,21 +104,21 @@ severidade.
 | Publicação das APIs só em loopback é conferida à mão; o teste automatizado cobre só o Keycloak | Uma mudança de porta no compose pode expor uma API sem teste que falhe | Revisão 001 |
 | O health check do PostgreSQL (`pg_isready` sem `-h`) pode dar saudável durante a inicialização do volume, pelo socket do servidor temporário | Na criação do volume, um dependente que usa TCP pode receber recusa de conexão. As APIs se recuperam pela readiness; os serviços de migração não têm retentativa. Não reproduzido | Revisão 001 |
 
-Corrigido em 2026-11-10, depois das revisões (severidade média):
+O que corrigi em 2026-11-10, depois das revisões (severidade média):
 
 | Achado | Correção |
 |--------|----------|
-| Lint não reproduzível: Ruff sem versão fixada (9 erros e 8 arquivos a formatar com a versão do dia) e mypy falhando nos testes, que importavam auxiliares por `sys.path` | Ruff e mypy fixados no grupo `dev`, com `[tool.ruff]` e `[tool.mypy]`; testes importam pelo caminho do pacote; `uv run ruff check .` e `uv run mypy` sem erro ([ADR-009](adr/ADR-009-stack-python.md)) |
-| O relay seguia publicando o lote depois de vencer o próprio lease, e duas execuções podiam publicar o mesmo evento ao mesmo tempo | Antes de cada evento, o ciclo confere pelo relógio monotônico se o lease comporta uma publicação inteira com margem; a publicação em curso não passa do lease; lease menor que o prazo de confirmação impede a subida ([ADR-003](adr/ADR-003-outbox-transacional-e-relay.md)) |
-| O relay não expunha `cashflow_pool_conexoes` | Registrado no relay, pela mesma função das APIs e do worker ([`observabilidade.md`](observabilidade.md#métricas-de-infra-83)) |
-| `cashflow_geracao_ativa` valia 0 depois de cada subida até a primeira consulta | A API lê `controle_projecao` a cada 10 s; o teste de cobertura exige o valor igual ao do banco ([`observabilidade.md`](observabilidade.md#métricas-de-infra-83)) |
+| Lint não reproduzível: Ruff sem versão fixada (9 erros e 8 arquivos a formatar com a versão do dia) e mypy falhando nos testes, que importavam auxiliares por `sys.path` | Fixei Ruff e mypy no grupo `dev`, com `[tool.ruff]` e `[tool.mypy]`; os testes passaram a importar pelo caminho do pacote; `uv run ruff check .` e `uv run mypy` saem sem erro ([ADR-009](adr/ADR-009-stack-python.md)) |
+| O relay seguia publicando o lote depois de vencer o próprio lease, e duas execuções podiam publicar o mesmo evento ao mesmo tempo | Fiz o ciclo conferir, antes de cada evento e pelo relógio monotônico, se o lease comporta uma publicação inteira com margem; a publicação em curso não passa do lease; lease menor que o prazo de confirmação impede a subida ([ADR-003](adr/ADR-003-outbox-transacional-e-relay.md)) |
+| O relay não expunha `cashflow_pool_conexoes` | Registrei no relay, pela mesma função das APIs e do worker ([`observabilidade.md`](observabilidade.md#métricas-de-infra-83)) |
+| `cashflow_geracao_ativa` valia 0 depois de cada subida até a primeira consulta | Fiz a API ler `controle_projecao` a cada 10 s; o teste de cobertura exige o valor igual ao do banco ([`observabilidade.md`](observabilidade.md#métricas-de-infra-83)) |
 
 ## Transição de um legado
 
-A arquitetura de transição é "não aplicável: sem legado informado"
-([`transicao.md`](transicao.md); decisão 006 D-002). Se um legado for
-informado, a transição deve ser desenhada sobre ele. Roteiro genérico,
-Proposta, só como ponto de partida:
+Considerei a arquitetura de transição não aplicável, porque nenhum legado
+foi informado ([`transicao.md`](transicao.md); decisão 006 D-002). Se um
+legado for informado, desenharia a transição sobre ele. Deixo um roteiro
+genérico, Proposta, só como ponto de partida:
 
 1. **Inventário:** dados do legado (lançamentos, saldos), formato, volume e
    quem os consome hoje.

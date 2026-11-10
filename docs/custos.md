@@ -1,11 +1,12 @@
 # Estimativa de custos
 
-Estimativa de custos com infraestrutura e licenças, diferencial de DES
-("Estimativa de custos com infraestrutura e licenças"). Escopo definido na
-decisão 006 D-003 (Eduardo, 2026-11-05): licenças dos componentes nas versões
+Aqui estimo os custos com infraestrutura e licenças, um diferencial de DES
+("Estimativa de custos com infraestrutura e licenças"). Defini o escopo na
+decisão 006 D-003, em 2026-11-05: licenças dos componentes nas versões
 fixadas e um cenário no Google Cloud com preços de página oficial, citando
-fonte e data de cada número. As specs ficam em `.ai/sdd/specs/`, pasta local
-que não é versionada (decisão 006 D-006).
+fonte e data de cada número, para que qualquer valor possa ser conferido.
+Mantenho as specs em `.ai/sdd/specs/`, pasta local que não versiono (decisão
+006 D-006).
 
 Fontes:
 
@@ -13,28 +14,28 @@ Fontes:
 - INFRA = [`Requisitos_de_Infraestrutura.md`](../Requisitos_de_Infraestrutura.md)
 
 Legenda de origem, a mesma de [`requisitos.md`](requisitos.md): "Fonte" =
-DES ou INFRA; "Eduardo" = decisão do autor com data; "Proposta" = não consta
-nas fontes; `[NVI]` = não verificado.
+DES ou INFRA; "decisão minha" = decisão que tomei, com data; "Proposta" = não
+consta nas fontes; `[NVI]` = não verificado.
 
-O que é implementado e o que é estimativa:
+Separo o que implementei do que só estimei:
 
 - **Implementado:** execução local com Docker Compose, um nó, sem nuvem
   ([ADR-010](adr/ADR-010-docker-compose-local.md)). O custo de licença dessa
   execução é zero (seção [Licenças](#licenças)).
 - **Estimativa, não implementada:** o cenário Google Cloud da seção
   [Cenário Google Cloud](#cenário-google-cloud). Infraestrutura em nuvem está
-  fora do escopo desta entrega (INFRA - Fora do escopo); o cenário existe
-  só para responder ao diferencial de DES e não foi implantado nem testado.
+  fora do escopo desta entrega (INFRA - Fora do escopo); fiz o cenário só
+  para responder ao diferencial de DES, e não o implantei nem testei.
 
 ## Licenças
 
-Todos os componentes executados ou usados no desenvolvimento são software
-livre, sem custo de licença nas versões fixadas. Nenhuma edição comercial ou
-assinatura de suporte é usada; suporte comercial não foi estimado.
+Todos os componentes que executo ou uso no desenvolvimento são software
+livre, sem custo de licença nas versões fixadas. Não uso nenhuma edição
+comercial nem assinatura de suporte, e não estimei suporte comercial.
 
 ### Imagens de contêiner
 
-Versões fixadas em [`infra/compose.yaml`](../infra/compose.yaml) e nos
+Fixei as versões em [`infra/compose.yaml`](../infra/compose.yaml) e nos
 `Dockerfile` de `services/`, cada uma com fonte e data em comentário
 (001 TD-007).
 
@@ -50,13 +51,13 @@ Versões fixadas em [`infra/compose.yaml`](../infra/compose.yaml) e nos
 | uv (estágio de build) | 0.13.7 (`ghcr.io/astral-sh/uv:0.13.7`) | MIT ou Apache-2.0 | Zero | [`LICENSE-MIT` e `LICENSE-APACHE` na tag 0.13.7](https://github.com/astral-sh/uv/tree/0.13.7) |
 
 Os pacotes do sistema base das imagens (Alpine 3.24 e Debian trixie) têm
-licenças livres diversas e não foram conferidos um a um `[NVI]`.
+licenças livres diversas, e não os conferi um a um `[NVI]`.
 
 ### Bibliotecas Python
 
 Versões resolvidas em [`uv.lock`](../uv.lock) e instaladas no ambiente do
-workspace; licença lida dos metadados de cada pacote instalado
-(`importlib.metadata`, 2026-11-09). Dependências diretas declaradas em
+workspace; li a licença dos metadados de cada pacote instalado
+(`importlib.metadata`, 2026-11-09, recontado em 2026-11-10). Dependências diretas declaradas em
 [`pyproject.toml`](../pyproject.toml) e nos `pyproject.toml` de `packages/`:
 
 | Biblioteca | Versão | Licença declarada | Uso |
@@ -72,48 +73,55 @@ workspace; licença lida dos metadados de cada pacote instalado
 | prometheus-client | 0.26.0 | Apache-2.0 AND BSD-2-Clause | Métricas `/metrics` |
 | pytest | 9.2.0 | MIT | Testes (só desenvolvimento) |
 | httpx2 | 2.16.0 | BSD-3-Clause | Cliente dos testes de API (só desenvolvimento) |
+| Ruff | 0.17.4 | MIT | Lint e formatação (só desenvolvimento; ST-Q-011) |
+| mypy | 2.4.1 | MIT | Verificação de tipos (só desenvolvimento; ST-Q-011) |
 
-No ambiente há 42 pacotes: 40 de terceiros, todos com licença livre
-declarada (MIT, MIT-0, BSD-2-Clause, BSD-3-Clause, Apache-2.0, LGPL-3.0-only
-ou PSF-2.0), e os 2 pacotes internos do repositório (`observabilidade`,
-`seguranca`), que não declaram licença.
+No ambiente há 48 pacotes: 46 de terceiros, todos com licença livre
+declarada (MIT, MIT-0, BSD-2-Clause, BSD-3-Clause, Apache-2.0, LGPL-3.0-only,
+MPL-2.0 ou PSF-2.0), e os 2 pacotes internos do repositório
+(`observabilidade`, `seguranca`), que não declaram licença. Eram 42 até
+2026-11-09; os 6 a mais entraram com Ruff e mypy no grupo `dev` em
+2026-11-10 (`ruff`, `mypy`, `mypy_extensions`, `librt`, `ast_serialize`, MIT;
+`pathspec`, MPL-2.0), e só rodam no desenvolvimento.
 
 ### Ferramentas de desenvolvimento e teste
 
 | Ferramenta | Versão | Licença | Evidência (2026-11-09) |
 |------------|--------|---------|------------------------|
 | k6 (teste de carga) | v2.3.0 | AGPL-3.0 | [`LICENSE.md` na tag v2.3.0](https://github.com/grafana/k6/blob/v2.3.0/LICENSE.md); versão registrada em [`testes/carga-consolidado.md`](testes/carga-consolidado.md#recursos-da-máquina) |
-| Ruff (lint e formatação) | Não fixada no projeto ([ADR-009](adr/ADR-009-stack-python.md)) | MIT | Metadados no PyPI (versão 0.17.4 consultada) |
-| mypy (tipos) | Não fixada no projeto ([ADR-009](adr/ADR-009-stack-python.md)) | MIT | Metadados no PyPI (versão 2.4.1 consultada) |
+| Ruff (lint e formatação) | 0.17.4, fixada no grupo `dev` desde 2026-11-10 ([ADR-009](adr/ADR-009-stack-python.md)) | MIT | Metadados do pacote instalado |
+| mypy (tipos) | 2.4.1, fixada no grupo `dev` desde 2026-11-10 ([ADR-009](adr/ADR-009-stack-python.md)) | MIT | Metadados do pacote instalado |
 | OpenSSL (AC local, `infra/tls/gerar-certificados.sh`) | A do host; 3.0.13 na máquina de desenvolvimento | Apache-2.0 | [`LICENSE.txt` na tag openssl-3.0.13](https://github.com/openssl/openssl/blob/openssl-3.0.13/LICENSE.txt) |
 
 ### Obrigações das licenças com copyleft
 
-Leitura do autor sobre o uso feito nesta entrega; não é parecer jurídico.
+É a minha leitura sobre o uso que fiz nesta entrega; não é parecer jurídico.
 
 | Licença | Componentes | Uso nesta entrega | Obrigação aplicável |
 |---------|-------------|-------------------|---------------------|
 | AGPL-3.0 | Grafana OSS, k6 | Imagem e binário sem modificação; k6 só roda em teste | Manter avisos de licença. Modificar o Grafana e oferecê-lo pela rede obrigaria a disponibilizar o código modificado |
 | LGPL-3.0 | psycopg, psycopg-pool | Bibliotecas usadas sem modificação | Manter avisos. Modificar a biblioteca e distribuí-la obrigaria a publicar a modificação sob LGPL |
-| MPL-2.0 | RabbitMQ | Imagem sem modificação | Copyleft por arquivo: só arquivos do RabbitMQ modificados teriam de ser publicados |
+| MPL-2.0 | RabbitMQ; `pathspec` (dependência do mypy, só desenvolvimento) | Imagem e biblioteca sem modificação | Copyleft por arquivo: só arquivos modificados teriam de ser publicados |
 
 As demais licenças (Apache-2.0, MIT, BSD, PostgreSQL License, PSF-2.0) são
 permissivas e pedem a preservação dos avisos de direito autoral.
 
 ## Cenário Google Cloud
 
-Estimativa mensal para executar a mesma solução no Google Cloud, sem mudar a
-arquitetura: o [`infra/compose.yaml`](../infra/compose.yaml) inteiro numa
-única VM do Compute Engine. É o equivalente direto da implantação local
-([05 - Implantação local](arquitetura/05-implantacao-local.md)) e herda os
-mesmos limites: um nó, sem alta disponibilidade, sem backup gerenciado
-(INFRA - Fora do escopo; [ADR-010](adr/ADR-010-docker-compose-local.md)).
+Estimo o custo mensal de executar a mesma solução no Google Cloud, sem mudar
+a arquitetura: o [`infra/compose.yaml`](../infra/compose.yaml) inteiro numa
+única VM do Compute Engine. Escolhi esse cenário porque é o equivalente
+direto da implantação local
+([05 - Implantação local](arquitetura/05-implantacao-local.md)): roda a
+mesma arquitetura que testei e herda os mesmos limites, ou seja, um nó, sem
+alta disponibilidade e sem backup gerenciado (INFRA - Fora do escopo;
+[ADR-010](adr/ADR-010-docker-compose-local.md)).
 
 ### Premissas
 
 | Premissa | Valor | Origem |
 |----------|-------|--------|
-| Região | São Paulo (`southamerica-east1`) | Proposta: o dia do lançamento é o do fuso America/Sao_Paulo ([002/D-005](requisitos.md#spec-002-registro-e-listagem-de-lançamentos), Eduardo, 2026-11-05), indício de operação no Brasil. A região não foi definida pelas fontes |
+| Região | São Paulo (`southamerica-east1`) | Proposta: o dia do lançamento é o do fuso America/Sao_Paulo ([002/D-005](requisitos.md#spec-002-registro-e-listagem-de-lançamentos), decisão minha, 2026-11-05), que tomei como indício de operação no Brasil. As fontes não definem a região |
 | Modelo de cobrança | Sob demanda (preço "Default" das páginas), sem desconto por compromisso de uso nem VM spot | Proposta: não há prazo de uso definido |
 | Horas por mês | 730 | As próprias páginas de preço exibem o valor mensal como o horário x 730 (conferido: em 43 regiões, o mensal da `e2-standard-4` é igual ao horário x 730) |
 | Moeda | USD, sem impostos e sem conversão para BRL | Preço das páginas oficiais; câmbio não estimado |
@@ -127,10 +135,11 @@ mesmos limites: um nó, sem alta disponibilidade, sem backup gerenciado
 | Memória medida, ambiente ocioso | 1.077,2 MiB somando os 12 contêineres do projeto `cashflow` | `docker stats --no-stream` em 2026-11-09T13:43:46-03:00 |
 | CPU medida sob carga | `consolidado-api` entre 25% e 59% de uma CPU a 50 consultas/s | [`testes/carga-consolidado.md`](testes/carga-consolidado.md#resultado) |
 
-Escolha: `e2-standard-4` (4 vCPUs, 16 GiB), o menor tipo E2 padrão que atende
-à baseline de INFRA. A medição indica folga, mas não substitui a validação da
-baseline, que segue pendente (INFRA, "Capacidade local"). Disco: 30 GiB, a
-baseline de armazenamento de INFRA.
+Escolhi a `e2-standard-4` (4 vCPUs, 16 GiB), o menor tipo E2 padrão que
+atende à baseline de INFRA, porque a baseline é o único dimensionamento que
+as fontes dão. A medição indica folga, mas não testei a solução numa máquina
+de 4 vCPUs: a configuração que verifiquei tem 12 CPUs lógicas e 16 GB
+(001/NFR-001) `[NVI]`. Disco: 30 GiB, a baseline de armazenamento de INFRA.
 
 ### Estimativa mensal
 
@@ -145,23 +154,23 @@ baseline de armazenamento de INFRA.
 
 ### Sensibilidade
 
-Mesmas fontes e data da tabela acima; só muda o item indicado.
+Uso as mesmas fontes e data da tabela acima; só muda o item indicado.
 
 | Variação | VM (USD/mês) | Disco 30 GiB (USD/mês) | IP (USD/mês) | Total (USD/mês) | Observação |
 |----------|--------------|------------------------|--------------|-----------------|------------|
 | Cenário base, São Paulo, `e2-standard-4` | 155,300784 | 4,50 | 3,65 | 163,45 | Tabela acima |
-| São Paulo, `e2-standard-2` (2 vCPUs, 8 GiB) | 77,650392 (USD 0,1063704 por hora) | 4,50 | 3,65 | 85,80 | Abaixo da baseline de INFRA; cabe na memória medida em repouso, mas não foi testado com carga `[NVI]` |
-| Iowa (`us-central1`), `e2-standard-4` | 97,8366732 (USD 0,13402284 por hora) | 3,00 (USD 0,10 por GiB por mês) | 3,65 | 104,49 | Mostra o peso da região; latência até o Brasil não medida |
+| São Paulo, `e2-standard-2` (2 vCPUs, 8 GiB) | 77,650392 (USD 0,1063704 por hora) | 4,50 | 3,65 | 85,80 | Abaixo da baseline de INFRA; cabe na memória medida em repouso, mas não testei com carga `[NVI]` |
+| Iowa (`us-central1`), `e2-standard-4` | 97,8366732 (USD 0,13402284 por hora) | 3,00 (USD 0,10 por GiB por mês) | 3,65 | 104,49 | Incluí para mostrar o peso da região; não medi a latência até o Brasil |
 
 ### Fora da estimativa
 
 | Item | Motivo |
 |------|--------|
-| Tráfego de saída para a Internet | Depende do volume e do tamanho das respostas, não medidos |
+| Tráfego de saída para a Internet | Depende do volume e do tamanho das respostas, que não medi |
 | Snapshots e backup | Política numérica de backup, retenção, RPO e RTO pendente (INFRA 7.7). Referência para quando for definida: snapshot padrão em São Paulo custa USD 0,08 por GiB por mês ([Disk and image pricing](https://cloud.google.com/compute/disks-image-pricing), 2026-11-09) |
 | Alta disponibilidade, zonas múltiplas, balanceador, PostgreSQL e RabbitMQ gerenciados ou em cluster | Fora do escopo (INFRA - Fora do escopo); caminhos em [`evolucoes.md`](evolucoes.md) |
 | Certificado TLS reconhecido publicamente e gestão de segredos em cofre | A AC local atende só ao desenvolvimento (INFRA 5.8); evolução em [`evolucoes.md`](evolucoes.md) |
-| Cloud Logging, Cloud Monitoring e plano de suporte | Não usados: métricas e painéis rodam no próprio compose ([ADR-012](adr/ADR-012-prometheus-grafana.md)) |
+| Cloud Logging, Cloud Monitoring e plano de suporte | Não os uso: métricas e painéis rodam no próprio compose ([ADR-012](adr/ADR-012-prometheus-grafana.md)) |
 | Descontos por compromisso de uso, nível gratuito e impostos | Fora da premissa de preço sob demanda |
 
 Para recalcular em outra data ou região, selecione a região nas mesmas
