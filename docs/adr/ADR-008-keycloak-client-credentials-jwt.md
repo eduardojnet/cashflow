@@ -107,12 +107,13 @@ disponibilidade do Keycloak a cada requisição (P-001).
   `test_keycloak_indisponivel`), e respondem 503, não 401, quando não há
   chave válida ou chega um `kid` desconhecido
   ([`packages/seguranca/tests/test_validador_jwt.py`](../../packages/seguranca/tests/test_validador_jwt.py),
-  contra Keycloak real).
+  com JWKS em memória e relógio controlado, para cobrir o TTL sem esperar).
 - O token de um cliente não autoriza a operação de outro; verifiquei os
   escopos contra o Keycloak real
   ([`tests/infra/test_keycloak.py`](../../tests/infra/test_keycloak.py),
-  [`test_validacao_jwt_keycloak.py`](../../services/lancamentos/tests/integracao/test_validacao_jwt_keycloak.py),
-  [`packages/seguranca/tests/test_validador_jwt.py`](../../packages/seguranca/tests/test_validador_jwt.py)).
+  [`test_validacao_jwt_keycloak.py`](../../services/lancamentos/tests/integracao/test_validacao_jwt_keycloak.py))
+  e, sem Keycloak, em
+  [`packages/seguranca/tests/test_validador_jwt.py`](../../packages/seguranca/tests/test_validador_jwt.py).
 - Verifico a cadeia TLS e a ausência de segredos versionados em
   [`tests/infra/test_certificados.py`](../../tests/infra/test_certificados.py)
   e [`tests/infra/test_segredos.py`](../../tests/infra/test_segredos.py).

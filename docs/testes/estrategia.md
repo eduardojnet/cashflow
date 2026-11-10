@@ -1,7 +1,8 @@
 # Estratégia de testes
 
-Como a solução é testada, onde ficam os testes e como executá-los. Evidência
-de DES ("Testes") e de INFRA §9. Os relatórios ficam ao lado:
+Aqui explico como testei a solução, onde ficam os testes e como executá-los.
+É a minha evidência para DES ("Testes") e para INFRA §9. Os relatórios ficam
+ao lado:
 
 - [`relatorio-carga.md`](relatorio-carga.md): teste de carga do consolidado
   (INFRA 9.4), com as contagens de cada execução;
@@ -10,7 +11,7 @@ de DES ("Testes") e de INFRA §9. Os relatórios ficam ao lado:
 - [`carga-consolidado.md`](carga-consolidado.md): relatório bruto da
   primeira execução de carga (004-T6), com protocolo e recursos da máquina.
 
-As specs ficam em `.ai/sdd/specs/`, pasta local que não é versionada
+Mantenho as specs em `.ai/sdd/specs/`, pasta local que não versiono
 (decisão 006 D-006).
 
 Fontes:
@@ -20,22 +21,28 @@ Fontes:
 
 ## Princípios
 
-- **Dependências reais nos testes de integração** (INFRA 9.1 a 9.3):
+- **Dependências reais nos testes de integração** (INFRA 9.1 a 9.3): uso
   PostgreSQL, RabbitMQ e Keycloak de verdade, em contêineres descartáveis,
-  com os papéis, privilégios, migrações e a topologia do ambiente. Regras que
-  o banco garante por privilégio (livro imutável, papéis por serviço) só são
-  provadas contra o banco real.
-- **Falha injetada de fora** (INFRA 9.5; ST-Q-010): `stop`, `kill`, `pause`,
-  `rm` e remoção de volume pelo Docker, sobre o `infra/compose.yaml` real.
-- **Isolamento do ambiente:** testes de integração e e2e sobem projetos e
+  com os papéis, privilégios, migrações e a topologia do ambiente. Fiz assim
+  porque as regras que o banco garante por privilégio (livro imutável, papéis
+  por serviço) só se provam contra o banco real.
+- **Falha injetada de fora** (INFRA 9.5; ST-Q-010): injeto `stop`, `kill`,
+  `pause`, `rm` e remoção de volume pelo Docker, sobre o `infra/compose.yaml`
+  real, para que a falha seja a mesma que aconteceria em operação, e não uma
+  simulação dentro do código.
+- **Isolamento do ambiente:** os testes de integração e e2e sobem projetos e
   contêineres próprios e os removem ao fim; o ambiente `cashflow` não recebe
-  lançamentos de teste, exceto a massa idempotente do teste de carga.
+  lançamentos de teste, exceto a massa idempotente do teste de carga. Fiz
+  assim porque o livro é imutável: um lançamento de teste nele não sai mais.
 - **Pulo explícito:** sem Docker ou sem os segredos de `infra/.env`, o módulo
-  é pulado com o motivo, nunca aprovado em silêncio.
+  é pulado com o motivo, nunca aprovado em silêncio, para que um teste que
+  não rodou nunca conte como aprovado.
 
 ## Níveis
 
-Contagens da execução de 2026-11-09 (ver [última execução](#última-execução-da-suíte)).
+Contagens da execução de 2026-11-09 (ver [última execução completa](#última-execução-da-suíte)).
+Em 2026-11-10 os testes de unidade e de pacotes passaram a 605, com os que
+acrescentei no lote de correção (ver [execução de 2026-11-10](#execução-de-2026-11-10-depois-das-correções)).
 
 | Nível | Onde | O que prova | Dependências | Testes |
 |---|---|---|---|---|
@@ -73,7 +80,8 @@ em execução exigem o projeto `cashflow` no ar (`docker compose -f
 infra/compose.yaml up -d --wait`); sem ele, são pulados com o motivo.
 
 Alguns módulos leem variáveis próprias e são pulados pelo comando acima, com
-o motivo impresso. Cada um traz o comando na docstring:
+o motivo impresso, porque precisam rodar do host ou de dentro de uma rede do
+compose. Cada um traz o comando na docstring:
 
 | Módulo | Variável | Como executar |
 |---|---|---|
@@ -83,7 +91,8 @@ o motivo impresso. Cada um traz o comando na docstring:
 
 ## Última execução da suíte
 
-Execução de 2026-11-09, sobre o commit `33feead`, na máquina descrita em
+Rodei a suíte completa em 2026-11-09, sobre o commit `33feead`, na máquina
+descrita em
 [`relatorio-carga.md`](relatorio-carga.md#2026-11-09-006-t6), com o ambiente
 `cashflow` no ar.
 
@@ -95,8 +104,8 @@ uv run --env-file infra/.env pytest -p no:cacheprovider -rs --durations=0 \
 ```
 
 Código de saída 0: **1.094 aprovados, 55 pulados, 0 falhas, 0 erros**, em
-1.640,5 s (27 min 20 s). Relatório JUnit dessa execução, copiado sem
-alteração: [`resultados/suite-2026-11-09.xml`](resultados/suite-2026-11-09.xml).
+1.640,5 s (27 min 20 s). Copiei sem alteração o relatório JUnit dessa
+execução: [`resultados/suite-2026-11-09.xml`](resultados/suite-2026-11-09.xml).
 
 | Nível | Aprovados | Pulados | Tempo (s) |
 |---|---|---|---|
@@ -116,8 +125,8 @@ alteração: [`resultados/suite-2026-11-09.xml`](resultados/suite-2026-11-09.xml
 | **Total** | **1.094** | **55** | |
 
 Os 55 pulados são exatamente os módulos da tabela de variáveis acima, todos
-com o motivo `KEYCLOAK_URL ausente` ou `RABBITMQ_HOST ausente`. Executados em
-seguida, cada um pelo seu comando, todos passaram:
+com o motivo `KEYCLOAK_URL ausente` ou `RABBITMQ_HOST ausente`. Executei-os
+em seguida, cada um pelo seu comando, e todos passaram:
 
 | Módulos | Resultado |
 |---|---|
@@ -130,9 +139,31 @@ Com isso, os 1.149 testes pytest passaram nesta data (1.094 + 29 + 7 + 12 +
 7). O teste de carga, executado antes da suíte, também passou
 ([`relatorio-carga.md`](relatorio-carga.md)).
 
-Lint e tipos (Ruff e mypy) não fizeram parte desta execução. Desde
-2026-11-10, as duas ferramentas estão fixadas no grupo `dev` e rodam sem
-erro sobre produção e testes, sem script único de verificação
+Lint e tipos (Ruff e mypy) não fizeram parte desta execução.
+
+## Execução de 2026-11-10, depois das correções
+
+Depois de corrigir os achados de severidade média das revisões
+([lacunas e correções](../evolucoes.md#lacunas-conhecidas-da-implementação)),
+não repeti a suíte completa. Rodei só as partes que as correções tocam,
+sobre o código do commit `5af2f87` (os commits seguintes mudam só
+documentação), com as imagens reconstruídas. Registro aqui o que rodei, para
+não apresentar esta bateria como a suíte completa:
+
+| Etapa | Comando | Resultado |
+|---|---|---|
+| Lint e tipos | `uv run ruff check . && uv run ruff format --check . && uv run mypy` | Sem erro; mypy em 177 arquivos |
+| Serviços e pacotes (unidade e integração) e certificados | `KEYCLOAK_URL=https://localhost:8443 uv run --env-file infra/.env pytest services packages tests/infra/test_certificados.py` | 909 passed em 207,7 s |
+| Observabilidade | `uv run --env-file infra/.env pytest tests/observabilidade` | 103 passed em 150,9 s |
+| Queda e perda do RabbitMQ | `uv run --env-file infra/.env pytest tests/e2e/test_queda_rabbitmq.py` | 3 passed em 143,8 s |
+| Reconstrução, troca e rollback | `uv run --env-file infra/.env pytest tests/e2e/test_reconstrucao.py` | 4 passed em 442,0 s |
+| Falhas do consolidado | `uv run --env-file infra/.env pytest tests/e2e/test_falhas_consolidado.py` | 7 passed em 374,0 s |
+
+Ficaram fora desta bateria `tests/infra` (exceto certificados), o e2e de
+independência dos lançamentos e o teste de carga. A única mudança no
+caminho deles foi a medição de pool da API de lançamentos, coberta pelos
+testes de serviços e de observabilidade acima; não reexecutei esses três. Desde essa data, Ruff e mypy estão fixados no grupo
+`dev` e rodam sobre produção e testes, sem script único de verificação
 ([ADR-009](../adr/ADR-009-stack-python.md)):
 
 ```bash

@@ -1,8 +1,8 @@
 # Teste de carga do consolidado (004-T6)
 
-Relatório bruto da execução do teste de carga da API do consolidado. A spec
-006 (006-T6) consolida este relatório, com as execuções seguintes, em
-[`relatorio-carga.md`](relatorio-carga.md).
+É o relatório bruto da primeira execução que fiz do teste de carga da API do
+consolidado. Na spec 006 (006-T6), consolidei este relatório com as
+execuções seguintes em [`relatorio-carga.md`](relatorio-carga.md).
 
 ## Protocolo
 
@@ -23,8 +23,8 @@ Fonte: INFRA 9.4; 004 NFR-001.
 | Autenticação | token de `cliente-consultas` obtido no Keycloak, renovado por VU antes de expirar (token de 300 s) |
 | TLS | k6 no host contra `https://localhost:8445`, confiando só na AC local (`SSL_CERT_FILE`); sem `insecureSkipTLSVerify` |
 
-Script: `tests/carga/consolidado.js`. Comando, a partir da raiz do
-repositório, com o ambiente no ar:
+Script que escrevi: `tests/carga/consolidado.js`. Comando, a partir da raiz
+do repositório, com o ambiente no ar:
 
 ```bash
 SSL_CERT_FILE=infra/tls/gerados/ac/ac-cashflow.crt \
@@ -36,7 +36,7 @@ atendido e com 99 quando não é.
 
 ## Resultado
 
-Execução de 2026-11-06, encerrada às 16:27:25 (-03:00), sobre o commit
+Executei em 2026-11-06 e encerrei às 16:27:25 (-03:00), sobre o commit
 `b2848ee` mais o script deste relatório. Código de saída do k6: 0.
 
 | Contagem | Valor |
@@ -56,14 +56,14 @@ Duração das consultas (ms), medida pelo k6:
 |---|---|---|---|---|---|---|---|
 | 1,79 | 5,00 | 5,37 | 6,20 | 6,47 | 8,05 | 9,26 | 25,31 |
 
-Corroboração pelo Prometheus, logo após o teste:
+Corroborei pelo Prometheus, logo após o teste:
 `sum by (status) (increase(cashflow_http_requisicoes_total{componente="consolidado-api"}[7m]))`
 retornou cerca de 15.610 respostas 200 e 0 respostas 503. O valor inclui as
 consultas de inclusão do setup e as sondas de health da janela, e `increase`
 extrapola nas bordas; serve de conferência de ordem de grandeza, não de
 contagem exata.
 
-Uso amostrado com `docker stats --no-stream` durante a carga:
+Amostrei o uso com `docker stats --no-stream` durante a carga:
 
 | Contêiner | CPU | Memória |
 |---|---|---|
@@ -91,14 +91,14 @@ relação com o projeto.
 
 ## Observações
 
-- A meta foi atingida sem cache, o que mantém a decisão 004 TD-005 (cache só
+- Atingi a meta sem cache, e por isso mantenho a decisão 004 TD-005 (cache só
   com evidência de necessidade).
 - O saldo acumulado é calculado na consulta (004 TD-007), somando as datas
   anteriores da geração ativa; com 31 datas no banco, o custo ficou abaixo de
   10 ms no p99,9. O teste não mede o custo com milhares de datas.
 - O registro da massa grava lançamentos no livro, que é imutável (002
-  TD-003). As chaves de idempotência fixas fazem a reexecução devolver os
-  mesmos lançamentos sem criar novos.
-- 001/NFR-001 passou a registrar os recursos acima no lugar da baseline
-  provisória de INFRA (decisão de Eduardo, 2026-11-10; emenda da 004-T6,
+  TD-003). Por isso usei chaves de idempotência fixas: a reexecução devolve
+  os mesmos lançamentos sem criar novos.
+- Em 2026-11-10 decidi que a 001/NFR-001 passaria a registrar os recursos
+  acima no lugar da baseline provisória de INFRA (emenda da 004-T6,
   2026-11-06).

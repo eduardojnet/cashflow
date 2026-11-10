@@ -1,10 +1,10 @@
 # Relatório dos testes de falha
 
-Evidência de DES ("Testes") e de INFRA 9.5 e 9.6: cada cenário de falha de
-INFRA 9.6 tem teste executável, que injeta a falha no ambiente real e confere
-o resultado. Implementação nas specs 002 (002-T6), 003 (003-T5), 004
-(004-T7) e 005 (005-T6). As specs ficam em `.ai/sdd/specs/`, pasta local que
-não é versionada (decisão 006 D-006).
+Aqui apresento a minha evidência para DES ("Testes") e para INFRA 9.5 e 9.6:
+escrevi, para cada cenário de falha de INFRA 9.6, um teste executável que
+injeta a falha no ambiente real e confere o resultado. Implementei-os nas
+specs 002 (002-T6), 003 (003-T5), 004 (004-T7) e 005 (005-T6). Mantenho as
+specs em `.ai/sdd/specs/`, pasta local que não versiono (decisão 006 D-006).
 
 Fontes:
 
@@ -16,10 +16,11 @@ carga: [`relatorio-carga.md`](relatorio-carga.md).
 
 ## Como a falha é injetada
 
-INFRA 9.5 pede "instrumentação para injeção controlada de falhas". A solução
-não tem código de injeção dentro dos serviços: a falha é provocada de fora,
-pelo próprio Docker, sobre o `infra/compose.yaml` real (decisão de Eduardo
-ST-Q-010). Os testes ficam em [`tests/e2e/`](../../tests/e2e/).
+INFRA 9.5 pede "instrumentação para injeção controlada de falhas". Decidi não
+pôr código de injeção dentro dos serviços e provocar a falha de fora, pelo
+próprio Docker, sobre o `infra/compose.yaml` real (ST-Q-010), para que o
+código testado seja o mesmo que roda em operação e a falha seja a de um
+processo ou contêiner de verdade. Os testes ficam em [`tests/e2e/`](../../tests/e2e/).
 
 | Operação | Falha que simula |
 |---|---|
@@ -28,11 +29,11 @@ ST-Q-010). Os testes ficam em [`tests/e2e/`](../../tests/e2e/).
 | `docker compose pause` | Processo congelado: mantém as conexões abertas, mas não lê nem escreve |
 | `docker compose rm` + `docker volume rm` | Perda dos dados do RabbitMQ (INFRA 7.6) |
 
-Cada módulo sobe um projeto compose próprio, com volumes próprios e portas
-efêmeras em `127.0.0.1`, e o remove ao fim com volumes e imagens locais.
-O ambiente `cashflow` do dia a dia não é tocado, e o livro, imutável por
-privilégio ([ADR-003](../adr/ADR-003-outbox-transacional-e-relay.md)), não
-recebe lançamentos de teste.
+Fiz cada módulo subir um projeto compose próprio, com volumes próprios e
+portas efêmeras em `127.0.0.1`, e removê-lo ao fim com volumes e imagens
+locais. Assim o ambiente `cashflow` do dia a dia não é tocado, e o livro,
+imutável por privilégio ([ADR-003](../adr/ADR-003-outbox-transacional-e-relay.md)),
+não recebe lançamentos de teste que não poderiam mais ser apagados.
 
 | Módulo | Projeto compose | Spec |
 |---|---|---|
@@ -43,7 +44,9 @@ recebe lançamentos de teste.
 
 ## O que todo cenário confere
 
-Depois do retorno do componente, os testes de 004-T7 e 005-T6 conferem:
+Depois do retorno do componente, fiz os testes de 004-T7 e 005-T6
+conferirem o mesmo conjunto, para que "passou" sempre signifique nada
+perdido e nada duplicado:
 
 - **Saldo correto:** o saldo de cada data é a soma dos lançamentos
   registrados pelo próprio teste, conferido em três lugares: no livro, no
@@ -59,7 +62,9 @@ Depois do retorno do componente, os testes de 004-T7 e 005-T6 conferem:
 ## Resultado por cenário de INFRA 9.6
 
 Execução de 2026-11-09 (detalhe em [Execução](#execução)). Os nove cenários
-de INFRA 9.6 passaram.
+de INFRA 9.6 passaram. Em 2026-11-10, depois das correções, reexecutei os
+módulos de RabbitMQ, falhas do consolidado e reconstrução, e todos passaram
+de novo ([estratégia](estrategia.md#execução-de-2026-11-10-depois-das-correções)).
 
 | # | Cenário de INFRA 9.6 | Teste e2e principal | Resultado |
 |---|---|---|---|
@@ -156,7 +161,7 @@ de INFRA 9.6 passaram.
 
 ## Execução
 
-Os testes de falha rodaram dentro da suíte completa de 2026-11-09, sobre o
+Rodei os testes de falha dentro da suíte completa de 2026-11-09, sobre o
 commit `33feead`, das 13:55:38 às 14:23:01 (-03:00). Código de saída 0, sem
 falha nem erro. Comando, máquina e contagens da suíte em
 [`estrategia.md`](estrategia.md#última-execução-da-suíte); relatório JUnit em
@@ -169,8 +174,8 @@ Para rodar só os testes de falha, a partir da raiz do repositório, com
 uv run --env-file infra/.env pytest tests/e2e
 ```
 
-Tempo de cada teste, do relatório JUnit. O primeiro teste de cada módulo
-inclui a subida do projeto compose próprio, e o último, a remoção.
+Copiei do relatório JUnit o tempo de cada teste. O primeiro teste de cada
+módulo inclui a subida do projeto compose próprio, e o último, a remoção.
 
 | Módulo | Teste | Cenário | Resultado | Tempo (s) |
 |---|---|---|---|---|
@@ -196,13 +201,18 @@ imagem dos testes e2e restou na máquina, e o projeto `cashflow` seguiu com os
 
 ## Limites
 
-- Os cenários usam volumes pequenos (dezenas de lançamentos por falha). Eles
-  provam a correção do protocolo (nada perdido, nada duplicado), não o
-  comportamento com backlog grande.
-- A queda é de processo ou contêiner na mesma máquina. Partição de rede,
-  disco cheio e relógio fora de sincronia não são injetados.
+- Usei volumes pequenos (dezenas de lançamentos por falha). Eles provam a
+  correção do protocolo (nada perdido, nada duplicado), não o comportamento
+  com backlog grande.
+- A queda é de processo ou contêiner na mesma máquina. Não injetei partição
+  de rede, disco cheio nem relógio fora de sincronia.
+- Não injetei a queda do coordenador no meio da troca: a retomada da
+  barreira herdada tem teste de integração, mas o cenário inteiro é `[NVI]`
+  ([lacunas](../evolucoes.md#lacunas-conhecidas-da-implementação)).
 - O teste e2e cobre a indisponibilidade do Keycloak dentro do cache do JWKS
   e do prazo do token (300 s cada). Depois disso, nenhum cliente obtém token
   novo, e a API sem chave válida em cache responde 503, não 401
-  ([ADR-008](../adr/ADR-008-keycloak-client-credentials-jwt.md)); esse caso
-  longo não é exercitado pelo e2e.
+  ([ADR-008](../adr/ADR-008-keycloak-client-credentials-jwt.md)); não exercito
+  esse caso longo no e2e. Cobri-o sem Keycloak, com JWKS em memória e relógio
+  controlado, em `packages/seguranca/tests/test_validador_jwt.py`
+  (`test_keycloak_parado_apos_o_ttl_sem_chave_valida_da_503`).

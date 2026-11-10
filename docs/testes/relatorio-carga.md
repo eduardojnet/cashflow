@@ -1,10 +1,10 @@
 # Relatório do teste de carga
 
-Evidência do requisito não funcional de DES para o consolidado ("em dias de
-pico, recebe 50 requisições por segundo, com no máximo 5% de perda") e do
-protocolo de INFRA 9.4. Implementação na spec 004 (004-T6, NFR-001). As
-specs ficam em `.ai/sdd/specs/`, pasta local que não é versionada (decisão
-006 D-006).
+Aqui apresento a minha evidência para o requisito não funcional de DES sobre
+o consolidado ("em dias de pico, recebe 50 requisições por segundo, com no
+máximo 5% de perda") e para o protocolo de INFRA 9.4. Implementei o teste na
+spec 004 (004-T6, NFR-001). Mantenho as specs em `.ai/sdd/specs/`, pasta
+local que não versiono (decisão 006 D-006).
 
 Fontes:
 
@@ -27,8 +27,10 @@ execução: [`carga-consolidado.md`](carga-consolidado.md). Script:
 
 ## Protocolo
 
-Fonte: INFRA 9.4; 004 NFR-001. Detalhe em
-[`carga-consolidado.md`](carga-consolidado.md#protocolo).
+Fonte: INFRA 9.4; 004 NFR-001. Usei chegada fixa, e não usuários
+concorrentes, porque é o que INFRA 9.4 descreve: com chegada fixa, uma API
+lenta acumula consultas em atraso em vez de reduzir a taxa enviada. Detalhe
+em [`carga-consolidado.md`](carga-consolidado.md#protocolo).
 
 | Item | Valor |
 |---|---|
@@ -48,13 +50,14 @@ SSL_CERT_FILE=infra/tls/gerados/ac/ac-cashflow.crt \
   uv run --env-file infra/.env -- k6 run tests/carga/consolidado.js
 ```
 
-Com `RESUMO_JSON=<arquivo>`, o script grava também o resumo em JSON. O k6
-termina com código 0 quando o limiar `consultas_sucesso >= 14250` é atendido
-e com 99 quando não é.
+Com `RESUMO_JSON=<arquivo>`, o script grava também o resumo em JSON. Pus o
+limiar `consultas_sucesso >= 14250` no próprio script, para que o k6 termine
+com código 0 quando a meta é atendida e com 99 quando não é, sem leitura
+manual do resultado.
 
 ## Contagens
 
-Valores do resumo impresso pelo próprio script (`handleSummary`).
+Copiei os valores do resumo impresso pelo próprio script (`handleSummary`).
 
 | Contagem | 2026-11-06 | 2026-11-09 |
 |---|---|---|
@@ -81,9 +84,9 @@ Duração de cada consulta em milissegundos, medida pelo k6.
 
 ### 2026-11-06 (004-T6)
 
-Encerrada às 16:27:25 (-03:00), sobre o commit `b2848ee` mais o script.
-Registro completo, com corroboração pelo Prometheus, uso dos contêineres e
-recursos da máquina, em [`carga-consolidado.md`](carga-consolidado.md#resultado).
+Encerrei às 16:27:25 (-03:00), sobre o commit `b2848ee` mais o script. O
+registro completo, com corroboração pelo Prometheus, uso dos contêineres e
+recursos da máquina, está em [`carga-consolidado.md`](carga-consolidado.md#resultado).
 
 ### 2026-11-09 (006-T6)
 
@@ -98,7 +101,8 @@ recursos da máquina, em [`carga-consolidado.md`](carga-consolidado.md#resultado
 | Ferramentas | Docker Engine 29.9.2, Docker Compose 5.6.1, k6 v2.3.0, uv 0.13.7 |
 | Outros contêineres na máquina | 3, sem relação com o projeto |
 
-Corroboração pelo Prometheus, consultado logo depois na janela da carga:
+Corroborei pelo Prometheus, consultado logo depois na janela da carga, para
+não depender só da contagem do gerador:
 `sum by (status) (increase(cashflow_http_requisicoes_total{componente="consolidado-api"}[6m] @ <13:56:00>))`
 retornou cerca de 15.745 respostas 200, 0 respostas 503 e 0 respostas 401. A
 mesma consulta nos 6 minutos anteriores, sem carga, retornou cerca de 32
@@ -106,7 +110,7 @@ respostas 200. O valor inclui as consultas do setup e esse tráfego de fundo, e
 `increase` extrapola nas bordas: serve de conferência de ordem de grandeza,
 não de contagem exata.
 
-Uso amostrado com `docker stats --no-stream`, 14 amostras durante a carga:
+Amostrei o uso com `docker stats --no-stream`, 14 amostras durante a carga:
 
 | Contêiner | CPU | Memória |
 |---|---|---|
@@ -122,24 +126,30 @@ naquele instante (2 de 14 amostras).
 - **Meta atingida com folga nas duas execuções.** Nenhuma perda; a pior
   consulta levou 68,82 ms, mais de 140 vezes abaixo do limite de 10 s.
 - **Latência maior na segunda execução.** A mediana passou de 5,37 ms para
-  8,92 ms e o p99, de 8,05 ms para 18,83 ms. A causa não foi isolada. Entre
+  8,92 ms e o p99, de 8,05 ms para 18,83 ms. Não isolei a causa. Entre
   as duas execuções entrou a spec 005; no processo da API, a única mudança é
   uma leitura da fase da reconstrução a cada 10 s, em segundo plano
   (`FASE_INTERVALO_SEGUNDOS`), e a consulta de saldo é a mesma. A outra
   candidata é a carga concorrente da
   máquina de desenvolvimento, que o teste não controla. As duas hipóteses são
   `[NVI]`; nenhuma das medições é de ambiente dedicado.
-- **Sem cache.** A meta foi atingida sem cache, o que mantém a decisão de
+- **Mudança posterior, sem nova medição.** Em 2026-11-10 a API passou a ler
+  também a geração ativa a cada 10 s, em segundo plano, e o relay passou a
+  conferir o lease antes de cada evento. Não reexecutei a carga depois disso
+  `[NVI]`; a consulta de saldo medida aqui não mudou.
+- **Sem cache.** Atingi a meta sem cache, e por isso mantenho a decisão de
   não ter cache na entrega inicial
   ([ADR-011](../adr/ADR-011-sem-cache-na-entrega-inicial.md)).
 - **Limites do teste.** O saldo acumulado é calculado na consulta, somando as
   datas anteriores da geração ativa (004 TD-007); com cerca de 30 datas no
   banco, o custo é pequeno. O teste não mede o custo com milhares de datas,
   nem consultas concorrentes ao registro de lançamentos, nem mais de um
-  processo da API. Esses pontos são gatilhos de revisão dos ADRs 009 e 011
+  processo da API. Tratei esses pontos como gatilhos de revisão dos ADRs 009
+  e 011
   ([`evolucoes.md`](../evolucoes.md)).
-- **Reexecução segura.** A massa usa chaves de idempotência fixas: a segunda
-  execução devolveu os mesmos lançamentos, sem gravar novos no livro, que é
-  imutável. Conferido no `pg-livro` depois da carga: 0 lançamentos com
+- **Reexecução segura.** Dei à massa chaves de idempotência fixas, porque o
+  livro é imutável e um lançamento de teste nele não sai mais: a segunda
+  execução devolveu os mesmos lançamentos, sem gravar novos. Conferi no
+  `pg-livro` depois da carga: 0 lançamentos com
   `registrado_em` na janela de 13:50 a 13:56 e 60 lançamentos nas datas da
   massa (um crédito e um débito em cada uma das 30 datas).
