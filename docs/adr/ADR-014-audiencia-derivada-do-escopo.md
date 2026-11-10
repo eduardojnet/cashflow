@@ -6,28 +6,31 @@
 
 ## Contexto
 
-O design da API de lançamentos exige validar a claim `aud` do token (002
-DQ-003, Eduardo, 2026-11-05). O realm configurado na 001-T4 não emitia
-`aud`, o que bloqueou a implementação da validação em 2026-11-06. Sem
-audiência, um token emitido para uma API é aceito na outra sempre que o nome
-do escopo coincidir ou for mal verificado: a autorização dependeria só do
-nome do escopo. Os dois clientes técnicos têm perfis diferentes:
-`cliente-lancamentos` usa só a API de lançamentos, e `cliente-consultas` usa
-as duas.
+No design da API de lançamentos, decidi validar a claim `aud` do token (002
+DQ-003, 2026-11-05). O realm que configurei na 001-T4 não emitia `aud`, o que
+bloqueou a implementação da validação em 2026-11-06. Sem audiência, um token
+emitido para uma API é aceito na outra sempre que o nome do escopo coincidir
+ou for mal verificado: a autorização dependeria só do nome do escopo. Os dois
+clientes técnicos têm perfis diferentes: `cliente-lancamentos` usa só a API
+de lançamentos, e `cliente-consultas` usa as duas.
 
 ## Decisão
 
-- Cada *client scope* do realm carrega um `oidc-audience-mapper` que acrescenta
+- Pus em cada *client scope* do realm um `oidc-audience-mapper` que acrescenta
   à claim `aud` a audiência da API dona do escopo:
   - `lancamentos:registrar` e `lancamentos:consultar` levam
     `aud=lancamentos-api`;
   - `consolidado:consultar` leva `aud=consolidado-api`.
 - `lancamentos-api` aceita somente token com `aud` contendo `lancamentos-api`;
-  `consolidado-api`, somente com `consolidado-api`. A audiência esperada é
-  configuração do pacote `packages/seguranca`, que serve às duas APIs.
-- Os nomes de audiência são os mesmos dos certificados TLS das APIs.
+  `consolidado-api`, somente com `consolidado-api`. Deixei a audiência
+  esperada como configuração do pacote `packages/seguranca`, que serve às
+  duas APIs.
+- Usei para a audiência os mesmos nomes dos certificados TLS das APIs.
 - Resultado: `cliente-lancamentos` recebe `aud=lancamentos-api`;
   `cliente-consultas` recebe `aud=[consolidado-api, lancamentos-api]`.
+
+Derivei a audiência do escopo, e não do cliente, porque assim ela acompanha
+o que o token de fato autoriza.
 
 ## Alternativas consideradas
 
@@ -37,7 +40,7 @@ as duas.
 - **Descrição:** manter o realm como estava.
 - **Prós:** nenhuma mudança no realm.
 - **Contras:** autorização dependente só do nome do escopo.
-- **Por que foi rejeitada:** descumpre 002 DQ-003.
+- **Por que rejeitei:** descumpre 002 DQ-003.
 
 ### Alternativa 2: Mapper por cliente (audiência fixa por cliente)
 
@@ -46,8 +49,7 @@ as duas.
 - **Prós:** configuração simples por cliente.
 - **Contras:** `cliente-consultas` usa as duas APIs, e a audiência deixaria de
   acompanhar o que o token de fato autoriza.
-- **Por que foi rejeitada:** a audiência precisa seguir os escopos
-  concedidos.
+- **Por que rejeitei:** a audiência precisa seguir os escopos concedidos.
 
 ### Alternativa 3: Audiência igual ao `clientId` do chamador (`azp`)
 
@@ -55,7 +57,7 @@ as duas.
 - **Descrição:** usar o identificador do cliente como audiência.
 - **Prós:** nenhum mapper extra.
 - **Contras:** identifica quem pede o token, não a quem ele se destina.
-- **Por que foi rejeitada:** semântica errada para `aud`.
+- **Por que rejeitei:** semântica errada para `aud`.
 
 ### Alternativa 4: Clientes `bearer-only` por API com `included.client.audience`
 
@@ -63,14 +65,14 @@ as duas.
 - **Descrição:** criar um cliente para cada API só para nomear a audiência.
 - **Prós:** forma comum de configurar audiência no Keycloak.
 - **Contras:** clientes sem credencial nem uso além de nomear a audiência.
-- **Por que foi rejeitada por ora:** acrescenta objetos ao realm sem ganho
-  sobre o mapper por escopo.
+- **Por que rejeitei por ora:** acrescenta objetos ao realm sem ganho sobre
+  o mapper por escopo.
 
 ## Consequências
 
 ### Positivas
 
-- Token só é aceito pela API a que se destina, independentemente do escopo
+- O token só é aceito pela API a que se destina, independentemente do escopo
   ([`tests/infra/test_keycloak.py`](../../tests/infra/test_keycloak.py),
   `test_token_traz_a_audiencia_das_apis_dos_seus_escopos`;
   [`test_validacao_jwt_keycloak.py`](../../services/lancamentos/tests/integracao/test_validacao_jwt_keycloak.py),
@@ -78,7 +80,7 @@ as duas.
 
 ### Negativas / trade-offs
 
-- Escopo novo exige declarar também a audiência.
+- Um escopo novo exige declarar também a audiência.
 - Mudar o realm exige recriar `vol-keycloak`, porque `--import-realm` não
   reimporta realm existente (001 TD-005); os segredos dos clientes vêm de
   `infra/.env` e não mudam na recriação.
@@ -86,13 +88,14 @@ as duas.
 ### Riscos
 
 - Esquecer o mapper num escopo novo: o token não teria a audiência e seria
-  recusado (falha segura). Os testes de Keycloak acusam a ausência.
+  recusado. Aceito esse risco porque a falha é segura, e os testes de
+  Keycloak acusam a ausência.
 
 ## Notas de implementação
 
-- Mappers em [`infra/keycloak/realm-cashflow.json`](../../infra/keycloak/realm-cashflow.json).
-- Gatilho de revisão: uma terceira API, um cliente que precise de token
-  restrito a só uma das APIs que consulta, ou troca do provedor de
+- Os mappers estão em [`infra/keycloak/realm-cashflow.json`](../../infra/keycloak/realm-cashflow.json).
+- Revejo esta decisão se surgir uma terceira API, um cliente que precise de
+  token restrito a só uma das APIs que consulta, ou troca do provedor de
   identidade.
 
 ## Referências

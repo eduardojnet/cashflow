@@ -14,9 +14,9 @@ mensagem mais de uma vez. Somar duas vezes o mesmo lançamento corrompe o
 saldo. INFRA 2.4 exige "deduplicação por evento e lançamento" e "quarentena
 durável para conflitos"; INFRA 4.10, nenhum descarte silencioso de evento
 financeiro; INFRA 3.2 lista inbox, contribuições e quarentena no banco do
-consolidado. Também é preciso tratar mensagem ilegível e o caso de um mesmo
-identificador chegar com conteúdo diferente, que indica defeito ou
-adulteração e não pode ser resolvido em silêncio.
+consolidado. Também preciso tratar mensagem ilegível e o caso de um mesmo
+identificador chegar com conteúdo diferente. Leio esse caso como defeito ou
+adulteração, e por isso não aceito resolvê-lo em silêncio.
 
 ## Decisão
 
@@ -31,13 +31,15 @@ chaves de deduplicação (004 TD-001):
    `lancamento_id`) com posição, data, tipo, valor e hash. Mesmo lançamento
    com outro conteúdo, ou outro lançamento na mesma posição: quarentena.
 
-Só uma contribuição nova altera o saldo do dia, grava o marcador de inclusão e
-avança o checkpoint.
+Usei as duas chaves porque INFRA 2.4 pede deduplicação por evento e por
+lançamento, e só uma delas deixaria passar o mesmo lançamento com outro
+`evento_id`. Só uma contribuição nova altera o saldo do dia, grava o marcador
+de inclusão e avança o checkpoint.
 
-**Quarentena no banco do consolidado (004 TD-003, D-008).** Conflitos e
-mensagens ilegíveis são gravados na tabela `quarentena` com o motivo e o
-conteúdo bruto, na mesma transação, uma vez por mensagem. Só depois do commit
-o worker envia o ACK. Nada é descartado sem registro.
+**Quarentena no banco do consolidado (004 TD-003, D-008).** Gravo conflitos e
+mensagens ilegíveis na tabela `quarentena`, com o motivo e o conteúdo bruto,
+na mesma transação. Só depois do commit o worker envia o ACK. Escolhi esse
+desenho para que nada seja descartado sem registro.
 
 A deduplicação do lado do produtor é a idempotência do registro (002 TD-004,
 em [ADR-003](ADR-003-outbox-transacional-e-relay.md)): a mesma requisição
@@ -48,16 +50,16 @@ repetida pelo cliente não gera um segundo lançamento nem um segundo evento.
 ### Alternativa 1: Fila de mensagens mortas (dead-letter) no RabbitMQ
 
 - **Origem:** análise do ADR; INFRA 4.9 aceita "fila ou armazenamento
-  durável", e 004 D-008 escolheu o banco.
+  durável", e em 004 D-008 escolhi o banco.
 - **Descrição:** rejeitar a mensagem em conflito e deixá-la numa fila de
   dead-letter.
 - **Prós:** recurso nativo do broker; sem tabela extra.
 - **Contras:** a quarentena ficaria fora da transação da projeção e no
   componente que não é fonte de verdade (INFRA 4.11); consulta e auditoria
   exigiriam ler o broker.
-- **Por que foi rejeitada:** INFRA 3.2 lista a quarentena no banco do
-  consolidado; gravar na mesma transação garante que a mensagem só é
-  confirmada depois de registrada.
+- **Por que rejeitei:** INFRA 3.2 lista a quarentena no banco do consolidado,
+  e gravar na mesma transação garante que a mensagem só é confirmada depois
+  de registrada.
 
 ### Alternativa 2: Deduplicar só por `evento_id`
 
@@ -66,7 +68,7 @@ repetida pelo cliente não gera um segundo lançamento nem um segundo evento.
 - **Prós:** um único controle; menos escrita.
 - **Contras:** um mesmo lançamento publicado com outro `evento_id` seria
   somado duas vezes.
-- **Por que foi rejeitada:** descumpre INFRA 2.4 ("por evento e lançamento").
+- **Por que rejeitei:** descumpre INFRA 2.4 ("por evento e lançamento").
 
 ### Alternativa 3: Saldo idempotente por recálculo, sem inbox
 
@@ -77,8 +79,8 @@ repetida pelo cliente não gera um segundo lançamento nem um segundo evento.
 - **Contras:** custo de escrita proporcional ao número de lançamentos da
   data; não distingue conflito de duplicata, então o conflito não iria para a
   quarentena.
-- **Por que foi rejeitada:** não atende INFRA 2.4 (quarentena para
-  conflitos) e piora a escrita no pico.
+- **Por que rejeitei:** não atende INFRA 2.4 (quarentena para conflitos) e
+  piora a escrita no pico.
 
 ### Alternativa 4: Descartar a mensagem ilegível com `nack` sem requeue
 
@@ -87,7 +89,7 @@ repetida pelo cliente não gera um segundo lançamento nem um segundo evento.
 - **Descrição:** recusar a mensagem que não passa na leitura do evento.
 - **Prós:** simples.
 - **Contras:** perda silenciosa de um possível evento financeiro.
-- **Por que foi rejeitada:** viola INFRA 4.10 e P-003.
+- **Por que rejeitei:** viola INFRA 4.10 e P-003.
 
 ## Consequências
 
@@ -97,31 +99,36 @@ repetida pelo cliente não gera um segundo lançamento nem um segundo evento.
   ([`tests/e2e/test_falhas_consolidado.py`](../../tests/e2e/test_falhas_consolidado.py);
   [`services/consolidado/tests/integracao/test_worker_projecao.py`](../../services/consolidado/tests/integracao/test_worker_projecao.py)).
 - Conflitos ficam auditáveis no banco, com o conteúdo original.
-- Como as chaves incluem a geração, a mesma mensagem é aplicada uma vez em
-  cada geração, o que permite reconstruir por replay
+- Como incluí a geração nas chaves, a mesma mensagem é aplicada uma vez em
+  cada geração, o que me permite reconstruir por replay
   ([ADR-007](ADR-007-geracoes-barreira-troca-atomica.md)).
 
 ### Negativas / trade-offs
 
-- Inbox e contribuições crescem com o volume de lançamentos e são
-  duplicadas por geração durante a reconstrução; a retenção é pendente
+- Inbox e contribuições crescem com o volume de lançamentos e são duplicadas
+  por geração durante a reconstrução; deixei a retenção pendente
   (INFRA 7.7).
-- A quarentena não tem fluxo de reprocessamento automático: o tratamento é
-  manual.
+- Não criei fluxo de reprocessamento automático da quarentena: o tratamento
+  é manual.
 
 ### Riscos
 
-- Quarentena crescendo sem ninguém ver. Mitigação: métrica
-  `cashflow_quarentena_total` e alerta `CashFlowQuarentena`
+- Quarentena crescendo sem ninguém ver. Mitiguei com a métrica
+  `cashflow_quarentena_total` e o alerta `CashFlowQuarentena`
   ([ADR-012](ADR-012-prometheus-grafana.md)).
 
 ## Notas de implementação
 
-- Caso de uso `ProjetarLancamento` em
+- O caso de uso `ProjetarLancamento` está em
   [`services/consolidado/aplicacao/projetar_lancamento.py`](../../services/consolidado/aplicacao/projetar_lancamento.py);
-  tabelas na migração 0001 do consolidado.
-- Gatilho de revisão: volume de quarentena que exija reprocessamento
-  automatizado, ou retenção da inbox definida (INFRA 7.7).
+  as tabelas estão na migração 0001 do consolidado.
+- Especificado e implementado: a quarentena não tem chave de deduplicação.
+  Se o ACK de uma mensagem quarentenada se perder depois do commit, a
+  reentrega grava outra linha e o contador conta de novo. Nada se perde e o
+  saldo não muda; registrei a lacuna em
+  [`evolucoes.md`](../evolucoes.md#lacunas-conhecidas-da-implementação).
+- Revejo esta decisão se o volume de quarentena exigir reprocessamento
+  automatizado, ou quando a retenção da inbox for definida (INFRA 7.7).
 
 ## Referências
 

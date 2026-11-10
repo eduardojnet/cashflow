@@ -1,22 +1,23 @@
 # Registros de decisão arquitetural (ADRs)
 
-Justificativa das escolhas de tecnologia e do tipo de arquitetura, exigida em
+Aqui justifico as escolhas de tecnologia e o tipo de arquitetura, como pede
 DES - Requisitos obrigatórios ("Justificativa na decisão/escolha de
-ferramentas/tecnologias e de tipo de arquitetura"). Cada ADR registra o
-contexto, a decisão, as alternativas consideradas e as consequências, no
-formato do template `adr.md` do SDD-KIT, traduzido para o português.
+ferramentas/tecnologias e de tipo de arquitetura"). Em cada ADR registro o
+contexto, a decisão que tomei, as alternativas que considerei e as
+consequências que aceitei. Usei o formato do template `adr.md` do SDD-KIT,
+traduzido para o português, porque é o mesmo formato das especificações que
+conduziram o projeto.
 
-Os ADRs não criam decisões novas: cada um deriva de decisões técnicas (TD)
-aprovadas nas specs 001 a 005 e 007 e no steering do projeto (decisão 006
-D-001). As specs ficam em `.ai/sdd/specs/`, pasta local que não é versionada
-(006 D-006); por isso o texto necessário foi trazido para cá. Visão geral da
-arquitetura: [`docs/arquitetura/`](../arquitetura/README.md).
+Não criei decisões novas nos ADRs: cada um deriva de decisões técnicas (TD)
+que aprovei nas specs 001 a 005 e 007 e no steering do projeto (decisão 006
+D-001). Mantenho as specs em `.ai/sdd/specs/`, pasta local que não versiono
+(006 D-006); por isso trouxe para cá o texto necessário para o avaliador. A
+visão geral da arquitetura está em [`docs/arquitetura/`](../arquitetura/README.md).
 
 ## Convenções
 
-- **Status:** `Aceito` = aprovado por Eduardo na data indicada;
-  `Proposto` = aplicado no código, mas ainda pendente de confirmação de
-  Eduardo.
+- **Status:** `Aceito` = aprovei a decisão na data indicada; `Proposto` =
+  apliquei no código, mas ainda não confirmei a decisão.
 - **Identificadores de origem:** `002 TD-001` é a decisão técnica TD-001 do
   `design.md` da spec 002; `004 D-008` é a decisão D-008 do
   `requirements.md` da spec 004; `ST-TD-001` é a decisão do steering de
@@ -25,11 +26,12 @@ arquitetura: [`docs/arquitetura/`](../arquitetura/README.md).
   ([`Requisitos_de_Infraestrutura.md`](../../Requisitos_de_Infraestrutura.md),
   [`Desafio_Arquiteto_Soluções.md`](../../Desafio_Arquiteto_Solu%C3%A7%C3%B5es.md)).
 - **Origem de cada alternativa:** "spec" quando a alternativa e o motivo da
-  rejeição constam da decisão aprovada; "análise do ADR" quando a alternativa
-  foi acrescentada nesta documentação (006-T3) para explicitar o trade-off,
-  sem mudar a decisão.
-- **Especificado e implementado:** quando a implementação difere do texto da
-  decisão, a diferença aparece em "Notas de implementação".
+  rejeição já constavam da decisão que aprovei; "análise do ADR" quando
+  acrescentei a alternativa ao escrever esta documentação (006-T3), para
+  deixar o trade-off explícito, sem mudar a decisão.
+- **Especificado e implementado:** quando o que implementei difere do texto
+  da decisão, registro a diferença em "Notas de implementação". Faço isso
+  para não apresentar o especificado como implementado.
 
 ## Índice
 
@@ -54,8 +56,9 @@ arquitetura: [`docs/arquitetura/`](../arquitetura/README.md).
 
 ## Rastreio: decisão técnica aprovada para ADR
 
-Toda decisão técnica aprovada nas specs 001 a 005 e 007 e no steering aparece
-em pelo menos um ADR.
+Levei cada decisão técnica que aprovei nas specs 001 a 005 e 007 e no
+steering para pelo menos um ADR. Fiz o rastreio para que nenhuma decisão
+fique só na pasta não versionada.
 
 | Decisão | Assunto | ADR |
 |---------|---------|-----|
@@ -106,8 +109,8 @@ em pelo menos um ADR.
 | 007 TD-007 | Isolamento de rede do Prometheus, do Grafana e do `/metrics` | ADR-016 |
 
 A spec 006 tem uma decisão técnica própria, 006 TD-001 ("documentação
-derivada dos artefatos SDD aprovados"). Ela trata de como esta documentação é
-produzida, não da arquitetura da solução, e fica fora do escopo dos ADRs
-definido em 006 D-001 (ADRs derivados das decisões das specs de produto). Ela
-se reflete na forma de `docs/`: cada documento cita a spec e a decisão de
-origem.
+derivada dos artefatos SDD aprovados"). Deixei-a fora dos ADRs porque ela
+trata de como produzi esta documentação, não da arquitetura da solução, e o
+escopo que defini para os ADRs em 006 D-001 é o das decisões das specs de
+produto. Ela aparece na forma de `docs/`: em cada documento cito a spec e a
+decisão de origem.
