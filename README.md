@@ -1,15 +1,16 @@
 # CashFlow
 
-Controle de fluxo de caixa diário de um comerciante: um serviço registra
-lançamentos (débitos e créditos) e outro entrega o saldo diário consolidado.
-Entrega do desafio de Arquiteto de Soluções descrito em
+Construí um controle de fluxo de caixa diário para um comerciante: um
+serviço registra lançamentos (débitos e créditos) e outro entrega o saldo
+diário consolidado. É a minha entrega do desafio de Arquiteto de Soluções
+descrito em
 [`Desafio_Arquiteto_Soluções.md`](Desafio_Arquiteto_Solu%C3%A7%C3%B5es.md)
 (DES), com os requisitos de infraestrutura de
 [`Requisitos_de_Infraestrutura.md`](Requisitos_de_Infraestrutura.md) (INFRA).
 
-O que este README cobre: como a solução funciona, onde está cada requisito
+Neste README explico como a solução funciona, onde atendi cada requisito
 obrigatório de DES, como rodar localmente do zero, como executar os testes e
-o runbook de reconstrução do consolidado. O restante da documentação fica em
+como reconstruir o consolidado. O restante da documentação está em
 [`docs/`](#documentação).
 
 ## Sumário
@@ -27,38 +28,51 @@ o runbook de reconstrução do consolidado. O restante da documentação fica em
 
 ## Como funciona
 
-Dois serviços de negócio independentes, cada um com o seu banco PostgreSQL,
-ligados por eventos (INFRA 2.1, 3.3;
-[ADR-001](docs/adr/ADR-001-servicos-independentes-bancos-exclusivos.md)):
+Separei a solução em dois serviços de negócio independentes, cada um com o
+seu banco PostgreSQL, ligados por eventos (INFRA 2.1, 3.3;
+[ADR-001](docs/adr/ADR-001-servicos-independentes-bancos-exclusivos.md)).
+Escolhi esse corte porque DES exige que o registro de lançamentos continue
+disponível com o consolidado fora do ar, e INFRA §3 pede bancos exclusivos e
+isolados:
 
 - **Lançamentos** (livro de caixa, fonte de verdade). A API grava o
   lançamento e o evento correspondente na mesma transação, numa tabela de
-  saída (outbox). Lançamento registrado não é alterado nem apagado. A API não
-  chama o consolidado nem o RabbitMQ, por isso continua confirmando
+  saída (outbox). Lançamento registrado não é alterado nem apagado: garanto
+  isso pelo privilégio do banco, não só pelo código. Não deixei a API chamar
+  o consolidado nem o RabbitMQ, e por isso ela continua confirmando
   lançamentos com o consolidado fora do ar, como exige DES.
 - **Relay** lê a outbox e publica cada evento no RabbitMQ, com confirmação do
-  broker; evento sem confirmação continua pendente e é publicado de novo
+  broker; evento sem confirmação continua pendente e é publicado de novo.
+  Usei a outbox porque INFRA 3.3 proíbe transação distribuída entre banco e
+  broker, e publicar direto na requisição perderia o evento ou falharia o
+  registro com o broker fora
   ([ADR-003](docs/adr/ADR-003-outbox-transacional-e-relay.md),
   [ADR-004](docs/adr/ADR-004-rabbitmq-confirms-ack-apos-commit.md)).
 - **Worker** consome os eventos, descarta duplicatas pela inbox, aplica a
   contribuição de cada lançamento no saldo do dia e só confirma a mensagem
-  depois do commit. Evento em conflito vai para quarentena durável, nunca é
-  descartado em silêncio
+  depois do commit. Deduplico porque a entrega é pelo menos uma vez, e somar
+  o mesmo lançamento duas vezes corromperia o saldo. Mando o evento em
+  conflito para uma quarentena durável, porque INFRA 4.10 não admite
+  descarte silencioso
   ([ADR-005](docs/adr/ADR-005-inbox-deduplicacao-quarentena.md)).
 - **Consolidado** (projeção do saldo diário). A API responde o saldo de uma
   data ou de um intervalo e se um lançamento já foi incluído, lendo só o seu
   próprio banco.
 - **Coordenador operacional** (linha de comando, só para o operador)
   reconcilia o consolidado com o livro, reconstrói a projeção numa geração
-  nova a partir do livro e troca a geração ativa sem interromper as consultas
+  nova a partir do livro e troca a geração ativa sem interromper as consultas.
+  Reconstruo numa geração separada para que as consultas sigam respondendo e
+  para que eu possa voltar atrás
   ([ADR-007](docs/adr/ADR-007-geracoes-barreira-troca-atomica.md)).
 - **Keycloak** emite tokens por OAuth 2.0 Client Credentials; cada API valida
-  o JWT e o escopo da rota por conta própria, sem gateway
+  o JWT e o escopo da rota por conta própria, sem gateway, com as chaves em
+  cache. Validar localmente evita que o registro dependa do Keycloak a cada
+  requisição, e INFRA 5.12 exclui gateway
   ([ADR-008](docs/adr/ADR-008-keycloak-client-credentials-jwt.md)).
 - **Prometheus e Grafana** coletam e mostram as métricas de INFRA 8.3
   ([ADR-012](docs/adr/ADR-012-prometheus-grafana.md)).
 
-Texto alternativo: o cliente técnico obtém um token no Keycloak e chama, por
+Texto alternativo do diagrama: o cliente técnico obtém um token no Keycloak e chama, por
 HTTPS, a API de lançamentos e a API do consolidado. A API de lançamentos
 grava no banco do livro. O relay lê a outbox desse banco e publica no
 RabbitMQ. O worker consome do RabbitMQ e grava no banco do consolidado, que a
@@ -80,22 +94,23 @@ flowchart LR
     CO --> PC
 ```
 
-Consequência que o cliente precisa conhecer: o consolidado é eventualmente
-consistente. O lançamento confirmado aparece no saldo depois que o worker o
-processa; a resposta do consolidado traz `posicao_checkpoint` e a rota de
-inclusão diz se um lançamento já está no saldo
-([fluxos](docs/arquitetura/04-fluxos.md)).
+Há uma consequência que o cliente precisa conhecer: aceitei que o
+consolidado seja eventualmente consistente, em troca da independência do
+registro. O lançamento confirmado aparece no saldo depois que o worker o
+processa. Para o cliente avaliar a defasagem, a resposta do consolidado traz
+`posicao_checkpoint`, e a rota de inclusão diz se um lançamento já está no
+saldo ([fluxos](docs/arquitetura/04-fluxos.md)).
 
-Stack: Python 3.12, uv, FastAPI, psycopg 3, aio-pika, Alembic, pytest, k6,
+Usei Python 3.12, uv, FastAPI, psycopg 3, aio-pika, Alembic, pytest, k6,
 Ruff, mypy, PostgreSQL, RabbitMQ, Keycloak, Prometheus e Grafana, tudo em um
-Docker Compose local
+Docker Compose local. Justifico cada escolha nos ADRs
 ([ADR-009](docs/adr/ADR-009-stack-python.md),
 [ADR-010](docs/adr/ADR-010-docker-compose-local.md)).
 
 ## Rastreio dos requisitos de DES
 
-Requisitos obrigatórios de DES e o arquivo que atende cada um (spec 006,
-`design.md` §4):
+Listo aqui os requisitos obrigatórios de DES e o arquivo em que atendi cada
+um (spec 006, `design.md` §4):
 
 | Requisito obrigatório de DES | Arquivo |
 |------------------------------|---------|
@@ -105,17 +120,17 @@ Requisitos obrigatórios de DES e o arquivo que atende cada um (spec 006,
 | Justificativa de tecnologias e tipo de arquitetura | [`docs/adr/`](docs/adr/README.md) |
 | Testes | [`docs/testes/`](docs/testes/estrategia.md) e pasta [`tests/`](tests/) |
 | README | [`README.md`](README.md) (este arquivo) |
-| Repositório público | `cashflow` no GitHub (decisão 006 D-005); publicação na etapa final (006-T8) |
+| Repositório público | `cashflow` no GitHub (decisão 006 D-005); publico na etapa final (006-T8) |
 | Documentação no repositório | [`docs/`](#documentação) |
 
-"Pode ser feito na linguagem que você domina": Python 3.12
-([ADR-009](docs/adr/ADR-009-stack-python.md)).
+"Pode ser feito na linguagem que você domina": usei Python 3.12, que INFRA
+1.3 fixa ([ADR-009](docs/adr/ADR-009-stack-python.md)).
 
-Requisitos diferenciais e requisitos não funcionais de DES:
+Os requisitos diferenciais e os não funcionais de DES estão em:
 
 | Item de DES | Arquivo |
 |-------------|---------|
-| Arquitetura de transição | [`docs/transicao.md`](docs/transicao.md): não aplicável, sem legado informado (decisão 006 D-002) |
+| Arquitetura de transição | [`docs/transicao.md`](docs/transicao.md): considerei não aplicável, porque nenhum legado foi informado (decisão 006 D-002) |
 | Estimativa de custos com infraestrutura e licenças | [`docs/custos.md`](docs/custos.md) |
 | Monitoramento e observabilidade | [`docs/observabilidade.md`](docs/observabilidade.md) |
 | Critérios de segurança para consumo de serviços | [`docs/seguranca.md`](docs/seguranca.md) |
@@ -127,21 +142,22 @@ Requisitos diferenciais e requisitos não funcionais de DES:
 
 | Item | Para quê | Observação |
 |------|----------|------------|
-| Linux com Docker Engine e Docker Compose v2 | Executar a solução | macOS e Windows: sem garantia, não testados |
+| Linux com Docker Engine e Docker Compose v2 | Executar a solução | Não testei macOS nem Windows: sem garantia |
 | Git | Obter o código | |
 | OpenSSL | Gerar a AC local, os certificados e os segredos | |
 | `curl` e `jq` | Verificar o ambiente e chamar as APIs | |
 | uv | Executar os testes | Instala o Python 3.12 do projeto, se faltar |
 | k6 | Teste de carga | Só para o teste de carga |
 
-Portas do host usadas, todas em `127.0.0.1`: 8443 (Keycloak), 8444 (API de
-lançamentos), 8445 (API do consolidado) e 8446 (Grafana). Se alguma estiver
-ocupada, troque pela variável correspondente em `infra/.env`
+Publiquei só quatro portas no host, todas em `127.0.0.1`, para que nada fique
+exposto fora da máquina: 8443 (Keycloak), 8444 (API de lançamentos), 8445
+(API do consolidado) e 8446 (Grafana). Se alguma estiver ocupada, troque pela
+variável correspondente em `infra/.env`
 ([implantação local](docs/arquitetura/05-implantacao-local.md#portas-publicadas)).
 
 Os contêineres das APIs, do Keycloak e do Grafana rodam com UID e GID 1000 e
-leem as chaves TLS geradas no host com modo 0640. Os comandos abaixo foram
-verificados com um usuário de UID 1000; com outro usuário, veja
+leem as chaves TLS geradas no host com modo 0640. Verifiquei os comandos
+abaixo com um usuário de UID 1000; com outro usuário, veja
 [limitações](#limitações-e-pendências-conhecidas).
 
 ## Executar localmente
@@ -162,10 +178,11 @@ ignorado pelo Git):
 infra/tls/gerar-certificados.sh
 ```
 
-**3. Criar `infra/.env` com segredos próprios.** O modelo
-[`.env.example`](.env.example) só tem nomes e valores vazios. O comando
-abaixo copia o modelo e preenche cada valor vazio com um segredo aleatório
-de 48 caracteres hexadecimais:
+**3. Criar `infra/.env` com segredos próprios.** Deixei no modelo
+[`.env.example`](.env.example) só nomes e valores vazios, para que nenhuma
+credencial real vá para o Git (INFRA 5.10). O comando abaixo copia o modelo e
+preenche cada valor vazio com um segredo aleatório de 48 caracteres
+hexadecimais:
 
 ```bash
 install -m 600 /dev/null infra/.env
@@ -173,11 +190,14 @@ awk '/^[A-Z_]+=$/ { c = "openssl rand -hex 24"; c | getline s; close(c); $0 = $0
   .env.example > infra/.env
 ```
 
-O Compose recusa subir com qualquer variável obrigatória vazia. O arquivo
-`infra/.env` nunca vai para o Git.
+Configurei o Compose para recusar a subida com qualquer variável obrigatória
+vazia, para que nenhum serviço suba sem senha. O arquivo `infra/.env` nunca
+vai para o Git.
 
 **4. Aplicar as migrações dos dois bancos.** Cada comando sobe o banco do
-seu lado, aplica o esquema com o papel de migração e termina:
+seu lado, aplica o esquema com o papel de migração e termina. Separei a
+migração da aplicação porque INFRA 5.11 pede identidade técnica própria para
+migrações, e assim o papel da API não tem privilégio de alterar esquema:
 
 ```bash
 docker compose -f infra/compose.yaml run --rm --build livro-migracao
@@ -215,21 +235,22 @@ docker compose -f infra/compose.yaml down -v   # para e apaga os volumes
 Depois de um `down -v`, repita a partir do passo 4. Os segredos de
 `infra/.env` só são gravados nos bancos, no RabbitMQ, no Keycloak e no
 Grafana na criação dos volumes: para trocá-los, use `down -v` ou reaplique
-os scripts de papéis
+os scripts de papéis, que escrevi idempotentes
 ([implantação local](docs/arquitetura/05-implantacao-local.md#volumes)).
 
 ## Usar as APIs
 
-Com a solução no ar. Há dois clientes técnicos, com escopos mínimos (INFRA
-5.4, 5.11;
-[ADR-013](docs/adr/ADR-013-escopo-lancamentos-consultar.md)):
+Com a solução no ar. Criei dois clientes técnicos, cada um só com os escopos
+da sua função, porque INFRA 5.4 e 5.11 pedem mínimo privilégio
+([ADR-013](docs/adr/ADR-013-escopo-lancamentos-consultar.md)):
 
 | Cliente | Escopos | Segredo em `infra/.env` |
 |---------|---------|-------------------------|
 | `cliente-lancamentos` | `lancamentos:registrar` | `KEYCLOAK_SEGREDO_CLIENTE_LANCAMENTOS` |
 | `cliente-consultas` | `lancamentos:consultar`, `consolidado:consultar` | `KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS` |
 
-Obter um token de cada cliente. O token vale 300 s
+Obter um token de cada cliente. O token vale 300 s; não criei lista de
+revogação, então essa é a janela em que um token vazado ainda vale
 ([ADR-008](docs/adr/ADR-008-keycloak-client-credentials-jwt.md)):
 
 ```bash
@@ -249,11 +270,12 @@ TOKEN_CONSULTA=$(token cliente-consultas KEYCLOAK_SEGREDO_CLIENTE_CONSULTAS)
 
 Registrar um lançamento. `tipo` é `CREDITO` ou `DEBITO`; `valor` é positivo,
 em reais, com até duas casas; `data_lancamento` é o dia, no formato
-`AAAA-MM-DD`; `descricao` é opcional. `Idempotency-Key` é obrigatório:
-repetir a chave com o mesmo corpo devolve a mesma resposta sem criar outro
-lançamento, e com outro corpo devolve 409. Data passada é aceita: o
-lançamento retroativo muda o saldo daquele dia e o acumulado dos dias
-seguintes (decisão 002/D-005, em [`docs/requisitos.md`](docs/requisitos.md)).
+`AAAA-MM-DD`; `descricao` é opcional. Tornei `Idempotency-Key` obrigatório
+para que o cliente possa repetir a requisição sem risco de lançar duas
+vezes: repetir a chave com o mesmo corpo devolve a mesma resposta sem criar
+outro lançamento, e com outro corpo devolve 409. Decidi aceitar data
+passada: o lançamento retroativo muda o saldo daquele dia e o acumulado dos
+dias seguintes (decisão 002/D-005, em [`docs/requisitos.md`](docs/requisitos.md)).
 
 ```bash
 curl -sS --cacert "$AC" -X POST https://localhost:8444/v1/lancamentos \
@@ -292,7 +314,7 @@ consumidor e as demais regras de consumo: [`docs/seguranca.md`](docs/seguranca.m
 
 ## Executar os testes
 
-Detalhes, níveis e a última execução completa:
+Descrevo os níveis, os comandos e a última execução completa em
 [`docs/testes/estrategia.md`](docs/testes/estrategia.md).
 
 ```bash
@@ -316,14 +338,16 @@ SSL_CERT_FILE=infra/tls/gerados/ac/ac-cashflow.crt \
   uv run --env-file infra/.env -- k6 run tests/carga/consolidado.js
 ```
 
-Os testes de integração usam PostgreSQL, RabbitMQ e Keycloak reais, nunca
-simulados (INFRA 9.1 a 9.3). Módulo sem a dependência necessária é pulado
-com o motivo impresso; os poucos módulos que precisam de variável própria
-(`KEYCLOAK_URL`, `RABBITMQ_HOST`) trazem o comando na docstring e estão
-listados na estratégia.
+Nos testes de integração uso PostgreSQL, RabbitMQ e Keycloak reais, nunca
+simulados, porque INFRA 9.1 a 9.3 os exigem e porque as garantias que testo
+(privilégios, bloqueio de linha, confirms) são do banco e do broker, e um
+dublê não as teria (P-009). Módulo sem a dependência necessária
+é pulado com o motivo impresso; os poucos módulos que precisam de variável
+própria (`KEYCLOAK_URL`, `RABBITMQ_HOST`) trazem o comando na docstring e
+estão listados na estratégia.
 
-Resultados registrados em 2026-11-09: suíte completa com 1.094 aprovados e
-55 pulados, e os 55 aprovados pelos comandos próprios
+Resultados que registrei em 2026-11-09: suíte completa com 1.094 aprovados
+e 55 pulados, e os 55 aprovados pelos comandos próprios
 ([estratégia](docs/testes/estrategia.md#última-execução-da-suíte)); carga com
 15.000 de 15.000 consultas com sucesso, perda 0
 ([relatório de carga](docs/testes/relatorio-carga.md)); os 9 cenários de
@@ -333,16 +357,18 @@ falha de INFRA 9.6 aprovados
 ## Runbook: reconstrução do consolidado
 
 Quando usar: a reconciliação acusa diferença entre o consolidado e o livro,
-ou o RabbitMQ perdeu mensagens (por exemplo, volume do broker perdido). O
-livro e a outbox bastam para recompor o consolidado; o RabbitMQ não é
-histórico (INFRA 4.11, 7.6). As consultas continuam respondendo pela geração
-ativa durante todo o processo. Fundamento:
+ou o RabbitMQ perdeu mensagens (por exemplo, volume do broker perdido).
+Desenhei a solução para que o livro e a outbox bastem para recompor o
+consolidado, porque o RabbitMQ não é histórico (INFRA 4.11, 7.6). As
+consultas continuam respondendo pela geração ativa durante todo o processo.
+Fundamento:
 [fluxos 6 a 9](docs/arquitetura/04-fluxos.md#6-reconstrução-da-projeção) e
 [ADR-007](docs/adr/ADR-007-geracoes-barreira-troca-atomica.md).
 
 Os comandos de operação rodam sob demanda, pelo perfil `operacao` do
-Compose. O lado do livro e o lado do consolidado não têm rede em comum
-(INFRA 6.7): o relatório do livro passa pelo operador, por arquivo.
+Compose. Não dei ao lado do livro e ao lado do consolidado nenhuma rede em
+comum (INFRA 6.7); por isso o relatório do livro passa pelo operador, por
+arquivo.
 
 Construa as imagens de operação antes do primeiro uso. Se o `run` precisar
 construir a imagem, a saída da construção sai junto na saída padrão e
@@ -354,7 +380,8 @@ $COMPOSE --profile operacao build
 ```
 
 **1. Reconciliar** (diagnóstico, não corrige nada). O relatório tem
-conteúdo financeiro: fica num arquivo temporário fora do repositório.
+conteúdo financeiro; por isso o guardo num arquivo temporário fora do
+repositório.
 
 ```bash
 RELATORIO=$(mktemp)
@@ -372,8 +399,9 @@ worker aplica cada evento na ativa e na candidata.
 $COMPOSE run --rm coordenador reconstruir iniciar
 ```
 
-Recusado se já houver uma geração `construindo` ou `anterior`: no máximo duas
-gerações coexistem (INFRA 7.5). Veja o passo 6.
+É recusado se já houver uma geração `construindo` ou `anterior`: limitei a
+duas gerações ao mesmo tempo porque INFRA 7.5 dimensiona espaço para duas.
+Veja o passo 6.
 
 **3. Republicar o livro desde a posição 1** (lado do livro). Reabre os
 eventos da outbox; o relay em execução os publica de novo, e a ativa os
@@ -392,8 +420,9 @@ $COMPOSE run --rm coordenador reconstruir status
 
 **5. Trocar a geração ativa.** O coordenador ergue a barreira, espera os
 workers pausarem, confere o critério com eles parados e troca o ponteiro numa
-transação. Sem a pausa no tempo limite (padrão 30 s, `--tempo-limite S`), a
-troca é recusada e nada muda.
+transação. Confiro com os workers parados para que nada mude entre a
+conferência e a troca. Sem a pausa no tempo limite (padrão 30 s,
+`--tempo-limite S`), a troca é recusada e nada muda.
 
 ```bash
 $COMPOSE run --rm coordenador geracao trocar
@@ -431,14 +460,14 @@ $COMPOSE run --rm coordenador geracao trocar     # se caiu na troca
 $COMPOSE run --rm coordenador geracao rollback   # se caiu no rollback
 ```
 
-A troca é uma transação: se o processo morreu antes do commit, o ponteiro
+Fiz da troca uma transação: se o processo morreu antes do commit, o ponteiro
 não mudou e a candidata segue `construindo`. Confira com o status antes de
 escolher o comando.
 
 Códigos de saída do coordenador: 0 sucesso, 1 operação recusada ou falha do
-banco, 2 uso inválido, 3 reconciliação com divergência. A sequência completa
-(perda do broker, reconciliação, reconstrução, troca e nova reconciliação) é
-testada em [`tests/e2e/test_reconstrucao.py`](tests/e2e/test_reconstrucao.py).
+banco, 2 uso inválido, 3 reconciliação com divergência. Testei a sequência
+completa (perda do broker, reconciliação, reconstrução, troca e nova
+reconciliação) em [`tests/e2e/test_reconstrucao.py`](tests/e2e/test_reconstrucao.py).
 
 ## Estrutura do repositório
 
@@ -458,8 +487,10 @@ tests/              infraestrutura, observabilidade, e2e e falhas, carga (k6)
 docs/               documentação de projeto
 ```
 
-Cada serviço segue a arquitetura hexagonal (`dominio/`, `aplicacao/`,
-`adaptadores/`) e tem os seus testes em `services/<serviço>/tests/`
+Organizei cada serviço em arquitetura hexagonal (`dominio/`, `aplicacao/`,
+`adaptadores/`), com os seus testes em `services/<serviço>/tests/`. INFRA 2.1
+exige isso no serviço de lançamentos; estendi aos demais para testar as
+regras sem banco nem broker e manter um estilo só
 ([ADR-002](docs/adr/ADR-002-arquitetura-hexagonal.md),
 [componentes](docs/arquitetura/03-componentes.md)).
 
@@ -478,10 +509,10 @@ Cada serviço segue a arquitetura hexagonal (`dominio/`, `aplicacao/`,
 | [`docs/evolucoes.md`](docs/evolucoes.md) | Fora do escopo, evoluções e lacunas conhecidas |
 | [`docs/testes/`](docs/testes/estrategia.md) | Estratégia de testes, relatório de carga e relatório de falhas |
 
-O projeto foi conduzido com especificações aprovadas antes do código
-(requisitos, desenho e tarefas por funcionalidade). Essas especificações
-ficam numa pasta local não versionada (decisão 006 D-006); o conteúdo que o
-avaliador precisa foi transcrito para `docs/`.
+Conduzi o projeto com especificações que aprovei antes do código
+(requisitos, desenho e tarefas por funcionalidade). Mantenho essas
+especificações numa pasta local, que não versiono (decisão 006 D-006); por
+isso transcrevi para `docs/` o conteúdo de que o avaliador precisa.
 
 ## Limitações e pendências conhecidas
 
@@ -489,16 +520,18 @@ avaliador precisa foi transcrito para `docs/`.
   modo 0640 e dono igual ao usuário que o executou; os contêineres que as
   leem rodam como 1000:1000. Com outro UID, ajuste o dono das chaves para
   1000 antes do passo 5 (`sudo chown 1000:1000 infra/tls/gerados/*.key`).
-  `[NVI]`: não testado com outro UID.
-- **macOS e Windows** não foram testados (decisão de Eduardo, 001/Q-001).
+  `[NVI]`: não testei com outro UID.
+- **macOS e Windows:** decidi não testá-los (001/Q-001) e concentrar a
+  verificação em Linux, que é o ambiente de INFRA 1.1.
 - **Sem script único de verificação:** lint, tipos e testes rodam por
   comandos separados ([ADR-009](docs/adr/ADR-009-stack-python.md)).
-- **Achados das revisões ainda abertos**, todos de baixa severidade e sem
-  perda de dado: limite de tamanho do corpo do lançamento, mensagem que
-  falha sempre no worker, quarentena repetida em reentrega, alertas que
-  dependem do próprio produtor da métrica, entre outros. A lista completa,
-  com o que já foi corrigido, está em
+- **Achados das revisões ainda abertos.** Revisei cada spec contra os
+  requisitos e o código; os achados que deixei abertos são todos de baixa
+  severidade e sem perda de dado: limite de tamanho do corpo do lançamento,
+  mensagem que falha sempre no worker, quarentena repetida em reentrega,
+  alertas que dependem do próprio produtor da métrica, entre outros. A lista
+  completa, com o que já corrigi, está em
   [`docs/evolucoes.md`](docs/evolucoes.md#lacunas-conhecidas-da-implementação).
-- **Publicação no GitHub** é a etapa final (006-T8).
+- **Publicação no GitHub:** é a minha etapa final (006-T8).
 - Demais lacunas e o que ficou fora do escopo:
   [`docs/evolucoes.md`](docs/evolucoes.md).
