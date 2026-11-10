@@ -1,13 +1,15 @@
 # 03 - Componentes
 
-Estrutura interna de cada serviço, modelos de dados e pacotes compartilhados.
-Índice: [README](README.md).
+Aqui descrevo a estrutura interna de cada serviço, os modelos de dados e os
+pacotes compartilhados. Índice: [README](README.md).
 
 ## Padrão comum: portas e adaptadores
 
-INFRA 2.1 exige domínio e aplicação hexagonais no serviço de lançamentos; a
-extensão do padrão aos demais componentes é Proposta aprovada
-(`.ai/steering/conventions.md`). Em todos os serviços:
+INFRA 2.1 exige domínio e aplicação hexagonais no serviço de lançamentos.
+Estendi o padrão aos demais componentes como Proposta que aprovei
+(`.ai/steering/conventions.md`), para testar as regras sem banco nem broker e
+manter um estilo só ([ADR-002](../adr/ADR-002-arquitetura-hexagonal.md)). Em
+todos os serviços:
 
 - `dominio/`: regras de negócio só com a biblioteca padrão do Python, sem
   framework, banco ou broker.
@@ -103,8 +105,9 @@ e seguintes.
 ### Contrato do evento `LancamentoRegistrado` v1
 
 Gravado na outbox pela mesma transação do lançamento e publicado pelo relay
-(`002/design.md` §4). O valor vai como texto com duas casas; descrição e
-cliente não saem do livro.
+(`002/design.md` §4). Mando o valor como texto com duas casas, e descrição e
+cliente não saem do livro: o evento leva só o que a projeção usa. Defini esse
+contrato como Proposta no design da spec 002, sem registrar ali outra razão.
 
 ```json
 {
@@ -119,8 +122,9 @@ cliente não saem do livro.
 }
 ```
 
-Mudança incompatível exige versão nova do evento e da routing key
-(`lancamento.registrado.v1`).
+Decidi que mudança incompatível exige versão nova do evento e da routing key
+(`lancamento.registrado.v1`), para que um consumidor antigo nunca receba um
+formato que não entende.
 
 ## Relay da outbox (`services/relay/`)
 
@@ -139,15 +143,17 @@ Spec 003. Processo `relay`; comando `relay-republicar`.
 
 ## Serviço de consolidado (`services/consolidado/`)
 
-Specs 004 e 005. Um pacote, dois processos: `worker`
+Specs 004 e 005. Pus um pacote e dois processos: `worker`
 (`consolidado/worker/`) e `consolidado-api` (`consolidado/adaptadores/http/`),
-na mesma imagem com comandos diferentes (`004/design.md` §4, Proposta).
+na mesma imagem com comandos diferentes (`004/design.md` §4, Proposta), porque
+os dois compartilham o domínio e o modelo de dados.
 
 Texto alternativo: o consumidor RabbitMQ entrega cada mensagem ao caso de
 uso `ProjetarLancamento`, que verifica a barreira, lê as gerações receptoras
 e, para cada uma, aplica inbox, contribuição, saldo, marcador e checkpoint
 pela porta de projeção. A API HTTP chama as consultas, que leem só a geração
-ativa. Um vigia periódico lê a fase da reconstrução para a métrica.
+ativa. Dois vigias periódicos leem a fase da reconstrução e a geração ativa
+para as métricas.
 
 ```mermaid
 flowchart LR
@@ -161,6 +167,7 @@ flowchart LR
     CC["aplicacao/consultar_consolidado.py<br/>ConsultarSaldo, ListarSaldos, ConsultarInclusao"]
     PQ["adaptadores/postgres/consulta.py"]
     FA["adaptadores/http/fase.py"]
+    GE["adaptadores/http/geracao.py"]
     DB[("pg-consolidado")]
     C --> PJ
     C --> BA
@@ -170,6 +177,7 @@ flowchart LR
     H --> CC
     CC --> PQ
     FA --> DB
+    GE --> DB
     PP --> DB
     PB --> DB
     PQ --> DB
@@ -183,14 +191,14 @@ flowchart LR
 | `aplicacao/barreira.py` | Sem processar com a barreira erguida; confirma a pausa em `estado_consumidor` com o consumo fechado | 005 TD-002 |
 | `adaptadores/rabbitmq/consumidor.py` | ACK manual só após o commit; reconexão; `prefetch` configurável | 004 TD-002; INFRA 4.8 |
 | `aplicacao/consultar_consolidado.py` | Saldo da data (com acumulado e checkpoint), saldos do intervalo paginados por data, sinal de inclusão; sempre na geração ativa | 004 FR-004 a FR-007, TD-007, TD-008 |
-| `adaptadores/http/` | Rotas, JWT com `consolidado:consultar`, health, métrica de fase | 004 §4; 005 §12 |
+| `adaptadores/http/` | Rotas, JWT com `consolidado:consultar`, health, métricas de fase e de geração ativa (esta lida do banco a cada intervalo desde 2026-11-10) | 004 §4; 005 §12; 007 §4 |
 | `worker/` | Montagem do processo do worker, health e métricas de reentrega, quarentena, checkpoint e lacunas | 004 §12 |
 
 ### Modelo de dados do consolidado
 
 Fonte da verdade: [migração 0001](../../services/consolidado/migracoes/versions/0001_tabelas_do_consolidado.py)
 e [migração 0002](../../services/consolidado/migracoes/versions/0002_controle_de_geracoes.py).
-As tabelas da projeção são chaveadas por geração, porque o replay republica o
+Chaveei as tabelas da projeção por geração, porque o replay republica o
 mesmo `evento_id` e cada geração precisa deduplicar o seu (`004/design.md`
 §4).
 
@@ -228,13 +236,15 @@ stateDiagram-v2
 ```
 
 Gerações receptoras de eventos: `ativa`, `construindo` e `anterior`
-(`005/design.md` §3). As transições valem para qualquer papel, porque o
-gatilho `geracao_transicao_valida` as impõe no banco.
+(`005/design.md` §3). Impus as transições no banco, pelo gatilho
+`geracao_transicao_valida`, para que valham para qualquer papel e não
+dependam de o código acertar.
 
 ## Coordenador operacional (`services/coordenador/`)
 
-Spec 005. CLI sem porta (INFRA 6.4), executado pelo operador com o papel
-`consolidado_operacao`.
+Spec 005. Fiz o coordenador como CLI sem porta (INFRA 6.4), executado pelo
+operador com o papel `consolidado_operacao`, para que nenhuma operação de
+gerações fique exposta em rede.
 
 | Comando | Caso de uso | Efeito |
 |---------|-------------|--------|
@@ -255,8 +265,9 @@ pausa.
 | Pacote | Responsabilidade | Origem |
 |--------|------------------|--------|
 | `packages/seguranca` | Validação JWT: cache de JWKS com TTL, algoritmo RS256, assinatura, `exp`, `iat`, emissor, audiência e escopo; erros tipados para 401, 403 e 503 | 002 TD-005, DQ-003; 004 DQ-002; 001 TD-008 |
-| `packages/observabilidade` | Catálogo fechado de métricas com rótulos permitidos e servidor `/metrics` em porta interna | 007 TD-002, TD-003 |
+| `packages/observabilidade` | Catálogo fechado de métricas com rótulos permitidos, servidor `/metrics` em porta interna e a medição do pool de conexões (`medir_pool`) usada pelos quatro componentes | 007 TD-002, TD-003 |
 
-Ambos são membros do workspace uv da raiz
-([`pyproject.toml`](../../pyproject.toml)) e dependem só de bibliotecas
-externas, nunca de um serviço.
+Deixei os dois como membros do workspace uv da raiz
+([`pyproject.toml`](../../pyproject.toml)), dependentes só de bibliotecas
+externas, nunca de um serviço, para que nenhum serviço acople a outro por
+meio deles.

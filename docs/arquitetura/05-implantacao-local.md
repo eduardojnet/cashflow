@@ -1,23 +1,23 @@
 # 05 - Implantação local
 
-Como a solução é implantada na máquina local: um único Docker Compose
-(INFRA 1.5; 001 TD-001), redes por fronteira, portas, volumes, identidades
-técnicas, TLS, segredos e health checks. Fonte da verdade:
+Aqui explico como implantei a solução na máquina local: um único Docker
+Compose (INFRA 1.5; 001 TD-001), redes por fronteira, portas, volumes,
+identidades técnicas, TLS, segredos e health checks. A fonte da verdade é o
 [`infra/compose.yaml`](../../infra/compose.yaml). Os passos de execução para o
-avaliador ficam no README da raiz (task 006-T7). Índice: [README](README.md).
+avaliador estão no README da raiz (task 006-T7). Índice: [README](README.md).
 
 ## Plataforma
 
 | Item | Valor | Origem |
 |------|-------|--------|
-| Sistema | Linux com Docker Engine e Docker Compose v2. macOS e Windows: sem garantia | INFRA 1.1, 1.4, 1.5; Eduardo (001/Q-001) |
+| Sistema | Linux com Docker Engine e Docker Compose v2. Não testei macOS nem Windows: sem garantia | INFRA 1.1, 1.4, 1.5; decisão minha (001/Q-001) |
 | Orquestração | Um arquivo Compose, projeto `cashflow`, um nó | 001 TD-001 |
-| Python | 3.12, workspace uv; imagens de serviço construídas a partir do repositório | INFRA 1.3; Eduardo (ST-Q-001) |
+| Python | 3.12, workspace uv; imagens de serviço construídas a partir do repositório | INFRA 1.3; decisão minha (ST-Q-001) |
 | Fora do escopo | Kubernetes, alta disponibilidade, cluster de PostgreSQL e RabbitMQ, balanceador, API Gateway, nuvem | INFRA - Fora do escopo |
 
 ## Redes
 
-Texto alternativo: seis redes. A rede do livro liga a API de lançamentos, o
+Texto alternativo: criei seis redes. A rede do livro liga a API de lançamentos, o
 relay, os comandos do lado do livro, o banco do livro, o exporter do livro e
 o Prometheus. A rede do consolidado liga o worker, a API do consolidado, o
 coordenador, o banco do consolidado, o exporter do consolidado e o
@@ -92,19 +92,20 @@ flowchart TB
 
 "Interna" significa `internal: true` com
 `com.docker.network.bridge.inhibit_ipv4`: sem saída para fora e sem rota do
-host até os contêineres, nem pelo IP interno. O `/metrics` das APIs escuta
-só no alias da API na rede interna do seu lado
+host até os contêineres, nem pelo IP interno. Fiz o `/metrics` das APIs
+escutar só no alias da API na rede interna do seu lado
 (`lancamentos-api-metricas`, `consolidado-api-metricas`), porque as APIs
 também estão na `rede-identidade`, que o host alcança (007 TD-007).
 
-O Prometheus é o único contêiner presente nas redes dos dois lados. Ele só
-lê `/metrics` e não abre caminho entre os componentes do consolidado e o
-`pg-livro` (`007/design.md` §3).
+O Prometheus é o único contêiner que pus nas redes dos dois lados. Aceitei
+essa exceção porque ele só lê `/metrics` e não abre caminho entre os
+componentes do consolidado e o `pg-livro` (`007/design.md` §3).
 
 ## Portas publicadas
 
-Somente em `127.0.0.1` e somente TLS (INFRA 5.7, 6.5, 6.6). Cada porta do
-host é trocável por variável em `infra/.env` se estiver ocupada.
+Publiquei somente em `127.0.0.1` e somente com TLS (INFRA 5.7, 6.5, 6.6).
+Deixei cada porta do host trocável por variável em `infra/.env`, para o caso
+de estar ocupada na máquina do avaliador.
 
 | Serviço | Host | Contêiner | Variável |
 |---------|------|-----------|----------|
@@ -113,11 +114,11 @@ host é trocável por variável em `infra/.env` se estiver ocupada.
 | `consolidado-api` | `127.0.0.1:8445` | 8443 | `CONSOLIDADO_API_PORTA_HOST` |
 | `grafana` | `127.0.0.1:8446` | 3000 | `GRAFANA_PORTA_HOST` |
 
-Sem porta publicada: bancos, RabbitMQ (inclusive a interface de
+Não publiquei porta para bancos, RabbitMQ (inclusive a interface de
 administração), Prometheus, exporters, `/metrics` e health de relay e worker,
-coordenador e comandos. O teste
-[`tests/infra/test_isolamento.py`](../../tests/infra/test_isolamento.py)
-confirma que o host não conecta a essas portas.
+coordenador e comandos. Confirmo em
+[`tests/infra/test_isolamento.py`](../../tests/infra/test_isolamento.py) que o
+host não conecta a essas portas.
 
 ## Serviços por ciclo de vida
 
@@ -127,9 +128,9 @@ confirma que o host não conecta a essas portas.
 | Perfil `migracao` | `livro-migracao`, `consolidado-migracao` | `docker compose -f infra/compose.yaml run --rm --build <serviço>`, uma vez antes de subir os serviços que dependem do esquema |
 | Perfil `operacao` | `relay-republicar`, `livro-relatorio`, `coordenador` | `docker compose -f infra/compose.yaml run --rm <serviço> <argumentos>`, pelo operador |
 
-Os perfis mantêm os comandos de execução única fora do `up`, que só aguarda
-contêineres de longa duração. Sem o esquema aplicado, as APIs, o relay e o
-worker sobem mas ficam não prontos.
+Usei perfis para manter os comandos de execução única fora do `up`, que só
+aguarda contêineres de longa duração. Sem o esquema aplicado, as APIs, o
+relay e o worker sobem mas ficam não prontos.
 
 Dependências de subida (`depends_on` com `service_healthy`): as APIs esperam
 o seu banco e o Keycloak; relay e worker esperam o seu banco e o RabbitMQ; os
@@ -137,8 +138,8 @@ exporters esperam o seu banco; o Grafana espera o Prometheus.
 
 ## Volumes
 
-Um volume por componente com estado (INFRA 7.1). Recriar contêineres sem
-`-v` preserva os dados; o script
+Dei um volume a cada componente com estado (INFRA 7.1). Recriar contêineres
+sem `-v` preserva os dados; verifico isso com o script
 [`infra/verificar-ambiente.sh`](../../infra/verificar-ambiente.sh)
 `persistencia` grava marcadores, recria os contêineres e confere.
 
@@ -151,14 +152,16 @@ Um volume por componente com estado (INFRA 7.1). Recriar contêineres sem
 | `vol-prometheus` | `prometheus` | Séries temporais |
 | `vol-grafana` | `grafana` | Banco interno do Grafana |
 
-Scripts de inicialização (papéis do PostgreSQL, importação do realm) só rodam
-na criação do volume. Os scripts de papéis são idempotentes e podem ser
-reaplicados a um volume existente (007 TD-007).
+Os scripts de inicialização (papéis do PostgreSQL, importação do realm) só
+rodam na criação do volume. Escrevi os scripts de papéis idempotentes, para
+que possam ser reaplicados a um volume existente sem apagar dados
+(007 TD-007).
 
 ## Identidades técnicas
 
-Uma credencial por papel em cada sistema, com privilégio mínimo (INFRA 5.11;
-001 TD-003). Senhas e segredos vêm de `infra/.env`.
+Dei uma credencial a cada papel em cada sistema, com privilégio mínimo
+(INFRA 5.11; 001 TD-003), para que o vazamento de uma credencial só exponha
+a função dela. Senhas e segredos vêm de `infra/.env`.
 
 | Papel | PostgreSQL | RabbitMQ | Keycloak |
 |-------|------------|----------|----------|
@@ -174,46 +177,49 @@ Uma credencial por papel em cada sistema, com privilégio mínimo (INFRA 5.11;
 | Administração do Keycloak | n/a | n/a | `admin-cashflow` no realm `master` |
 | Clientes técnicos | n/a | n/a | `cliente-lancamentos` (`lancamentos:registrar`); `cliente-consultas` (`consolidado:consultar`, `lancamentos:consultar`) |
 
-Papéis criados por
+Crio os papéis em
 [`infra/postgres/livro/10-papeis.sh`](../../infra/postgres/livro/10-papeis.sh)
 e [`infra/postgres/consolidado/10-papeis.sh`](../../infra/postgres/consolidado/10-papeis.sh);
-privilégios nas tabelas concedidos pelas migrações. Usuários e permissões do
-RabbitMQ em
+e concedo os privilégios nas tabelas pelas migrações. Declarei usuários e
+permissões do RabbitMQ em
 [`definicoes.modelo.json`](../../infra/rabbitmq/definicoes.modelo.json);
 realm em [`realm-cashflow.json`](../../infra/keycloak/realm-cashflow.json),
-versionado sem segredos (001 TD-005). Testes:
+versionado sem segredos (001 TD-005). Testes que escrevi para isso:
 [`test_papeis_banco.py`](../../tests/infra/test_papeis_banco.py),
 [`test_rabbitmq_permissoes.py`](../../tests/infra/test_rabbitmq_permissoes.py),
 [`test_keycloak.py`](../../tests/infra/test_keycloak.py).
 
 ## TLS
 
-- AC local gerada com OpenSSL por
+- Gero a AC local com OpenSSL por
   [`infra/tls/gerar-certificados.sh`](../../infra/tls/gerar-certificados.sh)
   (001 TD-004), com certificados de servidor para `lancamentos-api`,
   `consolidado-api`, `keycloak` e `grafana`. Nomes alternativos de cada
   certificado: o nome do serviço (DNS na rede interna), `localhost` e
-  `127.0.0.1`, para o acesso pelo host.
-- Saída em `infra/tls/gerados/`, ignorada pelo Git; a chave privada da AC e
-  as chaves de servidor nunca são versionadas (INFRA 5.9).
-- O Keycloak roda em modo produção, só com HTTPS. As APIs validam o
+  `127.0.0.1`, para que o acesso pelo host e pela rede interna validem.
+- A saída fica em `infra/tls/gerados/`, que o Git ignora; a chave privada da
+  AC e as chaves de servidor nunca são versionadas (INFRA 5.9). Conferi no
+  histórico inteiro que nenhuma delas foi commitada.
+- Rodo o Keycloak em modo produção, só com HTTPS. As APIs validam o
   certificado do Keycloak contra a AC local ao buscar o JWKS. O cliente
   técnico precisa confiar na AC (`ac-cashflow.crt`).
 - Teste: [`test_certificados.py`](../../tests/infra/test_certificados.py).
 
 ## Segredos
 
-- Modelo em [`.env.example`](../../.env.example), só com nomes e valores
-  vazios; cópia preenchida em `infra/.env`, ignorada pelo Git (INFRA 5.9,
-  5.10).
-- O compose recusa subir com variável obrigatória vazia (`${VAR:?...}`).
+- Deixei o modelo [`.env.example`](../../.env.example) só com nomes e valores
+  vazios; a cópia preenchida fica em `infra/.env`, que o Git ignora (INFRA
+  5.9, 5.10).
+- Configurei o compose para recusar a subida com variável obrigatória vazia
+  (`${VAR:?...}`), para que nenhum serviço suba sem senha.
 - Teste de ausência de segredos versionados:
   [`test_segredos.py`](../../tests/infra/test_segredos.py).
 
 ## Health checks
 
-Live e ready em todos os componentes (INFRA 8.4, 8.5). "Pronto" significa
-dependências utilizáveis, não só processo vivo.
+Pus live e ready em todos os componentes (INFRA 8.4, 8.5). Defini "pronto"
+como dependências utilizáveis, não só processo vivo, porque um processo vivo
+sem banco não atende ninguém.
 
 | Serviço | Pronto quando |
 |---------|---------------|
@@ -227,14 +233,18 @@ dependências utilizáveis, não só processo vivo.
 | `prometheus` | `/-/ready` |
 | `grafana` | `/api/health` por TLS |
 
-Os exporters não têm health check no compose; quando param, o Prometheus
-mostra o alvo com `up = 0` (`007/design.md` §8).
+Não pus health check nos exporters; quando param, o Prometheus mostra o alvo
+com `up = 0` (`007/design.md` §8). O `pg_isready` dos bancos roda sem `-h`,
+pelo socket, e pode dar saudável durante a inicialização do volume; deixei
+isso registrado nas
+[lacunas conhecidas](../evolucoes.md#lacunas-conhecidas-da-implementação).
 
 ## Versões fixadas
 
-Versão estável vigente na data da implementação, conferida na página oficial
-e fixada com fonte e data em comentário no compose (Eduardo, ST-Q-009;
-001 TD-007). Conferência em 2026-11-06.
+Fixei a versão estável vigente na data da implementação, conferida na página
+oficial, com fonte e data em comentário no compose (decisão minha, ST-Q-009;
+001 TD-007), para que o ambiente seja reprodutível. Fiz a conferência em
+2026-11-06.
 
 | Imagem | Tag |
 |--------|-----|
@@ -245,5 +255,5 @@ e fixada com fonte e data em comentário no compose (Eduardo, ST-Q-009;
 | Grafana OSS | `grafana/grafana:13.3.0` |
 | postgres_exporter | `quay.io/prometheuscommunity/postgres-exporter:v0.20.1` |
 
-As imagens dos serviços Python declaram as versões das imagens base nos
+Nas imagens dos serviços Python, declarei as versões das imagens base nos
 próprios `Dockerfile` (`services/*/Dockerfile`).

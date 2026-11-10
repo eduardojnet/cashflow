@@ -1,14 +1,14 @@
 # 01 - Contexto
 
-Visão de fora: quem usa a solução, o que ela oferece e com o que se comunica.
-Índice da arquitetura: [README](README.md).
+Aqui mostro a solução vista de fora: quem a usa, o que ela oferece e com o
+que se comunica. Índice da arquitetura: [README](README.md).
 
 ## Problema e objetivo
 
 Um comerciante controla o fluxo de caixa diário com lançamentos de débito e
 crédito e precisa de um relatório com o saldo diário consolidado (DES -
-Descritivo da Solução). Duas exigências moldam a arquitetura (DES - Requisitos
-não funcionais):
+Descritivo da Solução). Li duas exigências como as que moldam a arquitetura
+(DES - Requisitos não funcionais):
 
 1. O controle de lançamentos não pode ficar indisponível se o consolidado
    diário cair.
@@ -22,8 +22,8 @@ Requisitos refinados: [`requisitos.md`](../requisitos.md).
 
 | Ator | Como interage | Origem |
 |------|---------------|--------|
-| Comerciante | Por meio de um cliente técnico; não há interface de usuário na entrega | DES; INFRA 2.1, 2.3 (somente APIs) |
-| Cliente técnico | Sistema que chama as APIs por HTTPS com token OAuth 2.0 Client Credentials. Dois clientes no realm: `cliente-lancamentos` (`lancamentos:registrar`) e `cliente-consultas` (`consolidado:consultar`, `lancamentos:consultar`) | INFRA 5.2, 5.4; escopo `lancamentos:consultar`: Eduardo (002/Q-001) |
+| Comerciante | Por meio de um cliente técnico; não fiz interface de usuário nesta entrega | DES; INFRA 2.1, 2.3 (somente APIs) |
+| Cliente técnico | Sistema que chama as APIs por HTTPS com token OAuth 2.0 Client Credentials. Criei dois clientes no realm: `cliente-lancamentos` (`lancamentos:registrar`) e `cliente-consultas` (`consolidado:consultar`, `lancamentos:consultar`) | INFRA 5.2, 5.4; escopo `lancamentos:consultar`: decisão minha (002/Q-001) |
 | Operador | Executa, por linha de comando sem porta exposta, a republicação da outbox, o relatório do livro, a reconstrução, a troca e o rollback de geração e a reconciliação | INFRA 2.5, 6.4 |
 | Avaliador | Lê a documentação, sobe o ambiente local e executa os testes | DES - Requisitos obrigatórios |
 
@@ -35,8 +35,8 @@ lançamentos grava no livro; o relay leva os eventos do livro ao RabbitMQ; o
 worker leva os eventos do RabbitMQ à projeção do consolidado, que a API do
 consolidado consulta. O operador usa linhas de comando restritas, uma do lado
 do livro (republicação e relatório) e outra do lado do consolidado
-(coordenador). Prometheus coleta métricas e o Grafana as exibe a quem está no
-host.
+(coordenador). O Prometheus coleta métricas e o Grafana as exibe a quem está
+no host.
 
 ```mermaid
 flowchart LR
@@ -67,9 +67,9 @@ flowchart LR
     OP -->|"HTTPS 127.0.0.1"| OBS
 ```
 
-Base: `006/design.md` §3 (diagrama de contexto), detalhado com os comandos do
-lado do livro (`003/design.md` TD-004; `005/design.md` §4) e a observabilidade
-(spec 007).
+Base: `006/design.md` §3 (diagrama de contexto), que detalhei com os comandos
+do lado do livro (`003/design.md` TD-004; `005/design.md` §4) e com a
+observabilidade (spec 007).
 
 ## Fronteira do sistema
 
@@ -84,15 +84,16 @@ Fora da entrega (INFRA - Fora do escopo atual; INFRA 5.12): Kubernetes, alta
 disponibilidade produtiva, múltiplas zonas ou regiões, balanceador de carga,
 API Gateway, infraestrutura em nuvem, multiempresa, disaster recovery
 produtivo, autoscaling, SLA/RPO/RTO numéricos, cluster RabbitMQ, cluster
-PostgreSQL, RBAC e ABAC. Também fora: interface de usuário, tracing
-distribuído e notificação externa de alertas (`007/design.md` TD-004).
+PostgreSQL, RBAC e ABAC. Também deixei fora, porque nenhuma fonte os pede:
+interface de usuário, tracing distribuído e notificação externa de alertas
+(`007/design.md` TD-004).
 
 ## Tipo de arquitetura
 
 DES pede escolher um padrão arquitetural (microsserviços, monolitos, SOA ou
-serverless) e justificar o trade-off. O desenho adotado:
+serverless) e justificar o trade-off. Este é o desenho que adotei:
 
-| Característica | Escolha | Origem |
+| Característica | Escolhi | Origem |
 |----------------|---------|--------|
 | Decomposição | Serviços independentes por domínio (lançamentos e consolidado), cada um com banco exclusivo, credenciais, pools e migrações próprios; sem SQL cruzado, chave estrangeira entre serviços ou transação distribuída | INFRA 2.1, 3.3; ST-TD-001 |
 | Integração | Assíncrona por eventos: outbox transacional + relay + RabbitMQ; consumidor idempotente com inbox | INFRA 2.2, 2.4, §4 |
@@ -102,22 +103,24 @@ serverless) e justificar o trade-off. O desenho adotado:
 | Fonte de verdade | O livro e a outbox; o RabbitMQ não é fonte de verdade nem histórico para reconstrução | INFRA 4.11, 7.2 |
 | Implantação | Docker Compose local, um nó; Kubernetes fora do escopo | INFRA 1.5 |
 
-Consequência central: o registro de lançamento depende só do banco do livro
-e do JWKS em cache. Consolidado, worker, relay e RabbitMQ podem estar parados
-sem impedir a confirmação de um lançamento válido (P-001; teste
+Aceitei a consistência eventual entre os lados porque é o preço da
+independência que DES exige: a consequência central é que o registro de
+lançamento depende só do banco do livro e do JWKS em cache. Consolidado,
+worker, relay e RabbitMQ podem estar parados sem impedir a confirmação de um
+lançamento válido (P-001; teste
 `tests/e2e/test_independencia_lancamentos.py`).
 
 ## Decisões que moldam a arquitetura
 
-Os ADRs ficam em [`docs/adr/`](../adr/README.md), com o rastreio de cada
-decisão técnica aprovada para o seu ADR. Origem de cada um, conforme
+Os ADRs estão em [`docs/adr/`](../adr/README.md), com o rastreio de cada
+decisão técnica que aprovei para o seu ADR. Origem de cada um, conforme
 `006/design.md` §4:
 
 | ADR | Título | Origem |
 |-----|--------|--------|
 | ADR-001 | Serviços independentes com bancos exclusivos e integração assíncrona | INFRA 2.1, 3.3; ST-TD-001 |
 | ADR-002 | Arquitetura hexagonal | INFRA 2.1 |
-| ADR-003 | Outbox transacional e relay | INFRA 2.2, 3.1; 002 TD-001; 003 TD-001 a TD-004 |
+| ADR-003 | Outbox transacional e relay | INFRA 2.2, 3.1; 002 TD-001; 003 TD-001 a TD-005 |
 | ADR-004 | RabbitMQ com confirms, `mandatory` e ACK após commit; não é fonte de verdade | INFRA §4; 004 TD-002 |
 | ADR-005 | Inbox, deduplicação e quarentena | INFRA 2.4; 004 TD-001, TD-003 |
 | ADR-006 | Posição monotônica e checkpoint | 002 TD-002; 004 TD-006 |

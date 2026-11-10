@@ -1,10 +1,10 @@
 # 02 - Contêineres
 
-Processos executáveis e armazenamentos da solução, com a tecnologia de cada
-um e quem fala com quem. Cada item corresponde a um serviço de
-[`infra/compose.yaml`](../../infra/compose.yaml). Redes, portas e volumes em
-detalhe: [05 - Implantação local](05-implantacao-local.md). Índice:
-[README](README.md).
+Aqui listo os processos executáveis e os armazenamentos da solução, com a
+tecnologia que escolhi para cada um e quem fala com quem. Cada item
+corresponde a um serviço de [`infra/compose.yaml`](../../infra/compose.yaml).
+Detalho redes, portas e volumes em [05 - Implantação local](05-implantacao-local.md).
+Índice: [README](README.md).
 
 ## Diagrama de contêineres
 
@@ -15,8 +15,9 @@ consolidado; a API do consolidado só lê esse banco; o coordenador o opera. As
 duas APIs buscam o JWKS no Keycloak. Os comandos de republicação e de
 relatório rodam do lado do livro; o relatório chega ao coordenador por
 arquivo ou entrada padrão, não por rede. O Prometheus coleta as métricas de
-APIs, relay, worker, RabbitMQ e exporters; o Grafana lê o Prometheus. Não há
-seta do lado do consolidado até o banco do livro.
+APIs, relay, worker, RabbitMQ e exporters; o Grafana lê o Prometheus. Não
+desenhei nenhuma seta do lado do consolidado até o banco do livro, porque
+essa ligação não existe (INFRA 6.7).
 
 ```mermaid
 flowchart TB
@@ -105,9 +106,13 @@ flowchart TB
 | `grafana` | Grafana OSS 13.3.0 | Painel "CashFlow" e fonte de dados provisionados | Serviço contínuo | 007 |
 | `postgres-exporter-livro`, `postgres-exporter-consolidado` | postgres_exporter 0.20.1 | Métricas dos bancos, inclusive tamanho | Serviço contínuo | 007 |
 
-Versões fixadas com fonte e data em comentário no compose (001 TD-007).
+Fixei as versões com fonte e data em comentário no compose (001 TD-007),
+para que o avaliador suba o mesmo ambiente que testei.
 
 ## Comunicação permitida
+
+Dei a cada ligação a credencial de menor privilégio que a sua função exige
+(INFRA 5.11; P-007):
 
 | De | Para | Protocolo | Credencial | Observação |
 |----|------|-----------|------------|------------|
@@ -125,24 +130,26 @@ Versões fixadas com fonte e data em comentário no compose (001 TD-007).
 | `prometheus` | alvos de coleta | HTTP nas redes internas | nenhuma | Alvos em [`prometheus.yml`](../../infra/observabilidade/prometheus.yml) |
 | `grafana` | `prometheus` | HTTP na rede de observabilidade | nenhuma | 007 TD-007 |
 
-Caminhos que não existem, por desenho:
+Caminhos que deixei de fora de propósito:
 
-- `lancamentos-api` não chama RabbitMQ nem o consolidado (INFRA 2.1).
+- `lancamentos-api` não chama RabbitMQ nem o consolidado (INFRA 2.1), para
+  que o registro não dependa deles.
 - Nenhum contêiner do lado do consolidado (`worker`, `consolidado-api`,
-  `coordenador`) tem rede em comum com `pg-livro` (INFRA 6.7). O replay passa
-  pela outbox e pelo RabbitMQ; o relatório do livro passa pelo operador.
+  `coordenador`) tem rede em comum com `pg-livro` (INFRA 6.7). Por isso o
+  replay passa pela outbox e pelo RabbitMQ, e o relatório do livro passa pelo
+  operador.
 - O host não alcança bancos, RabbitMQ, Prometheus nem o `/metrics` dos
-  serviços (INFRA 6.1 a 6.3; 007 TD-007). Teste:
+  serviços (INFRA 6.1 a 6.3; 007 TD-007). Verifiquei em:
   [`tests/infra/test_isolamento.py`](../../tests/infra/test_isolamento.py).
 
 ## Topologia do RabbitMQ
 
-Declarada por arquivo de definições carregado na subida, para que o relay não
-precise de permissão de configuração (`003/design.md` §4; INFRA 5.11). Modelo
-versionado em
+Declarei a topologia num arquivo de definições carregado na subida, para que
+o relay não precise de permissão de configuração (`003/design.md` §4;
+INFRA 5.11). Versionei o modelo em
 [`infra/rabbitmq/definicoes.modelo.json`](../../infra/rabbitmq/definicoes.modelo.json),
-com as senhas preenchidas a partir de `infra/.env` pelo
-[`entrypoint.sh`](../../infra/rabbitmq/entrypoint.sh).
+sem senhas: o [`entrypoint.sh`](../../infra/rabbitmq/entrypoint.sh) as
+preenche a partir de `infra/.env`.
 
 | Item | Valor | Origem |
 |------|-------|--------|
@@ -152,4 +159,4 @@ com as senhas preenchidas a partir de `infra/.env` pelo
 | Mensagem | persistente (`delivery_mode` 2); `message_id` = `evento_id` | Fonte: persistente (INFRA 4.5) |
 | Publicação | `mandatory` e publisher confirms | INFRA 4.6, 4.7 |
 | Consumo | ACK manual após o commit; `prefetch` configurável (`WORKER_PREFETCH`, padrão 10) | INFRA 4.8; 004 DQ-003 |
-| Quarentena | No banco do consolidado, não em fila | INFRA 3.2, 4.9 |
+| Quarentena | No banco do consolidado, não em fila, para gravá-la na mesma transação da projeção | INFRA 3.2, 4.9; 004 D-008 |
