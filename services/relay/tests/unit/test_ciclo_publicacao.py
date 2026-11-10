@@ -3,6 +3,9 @@
 Portas falsas registram a ordem das chamadas: marcar vem sempre depois do
 confirm do mesmo evento, só o confirm positivo sem return marca, e todo outro
 desfecho reagenda o evento pela política de retentativa, sem removê-lo.
+
+Um relógio falso mede o lease: nenhum evento é publicado sem que o restante
+comporte uma publicação inteira (FR-004; review 003, Issue 1).
 """
 
 import asyncio
@@ -14,11 +17,14 @@ import pytest
 from relay.aplicacao import (
     EventoReservado,
     PoliticaRetentativa,
+    PrazoReserva,
     PublicarPendentes,
     ResultadoPublicacao,
 )
 
 POLITICA = PoliticaRetentativa(base=timedelta(seconds=1), teto=timedelta(minutes=1))
+# Os padrões do compose: lease de 30 s e confirm em até 5 s, margem de 2 s.
+PRAZO = PrazoReserva(lease=timedelta(seconds=30), publicacao=timedelta(seconds=5))
 
 
 def _evento(posicao: int, tentativas: int = 0) -> EventoReservado:
@@ -38,17 +44,24 @@ class _Portas:
         self,
         eventos: list[EventoReservado],
         resultados: dict[uuid.UUID, ResultadoPublicacao | Exception],
+        duracao_publicacao: float = 0.0,
     ) -> None:
         self._eventos = eventos
         self._resultados = resultados
+        self._duracao_publicacao = duracao_publicacao
+        self.agora = 0.0
         self.chamadas: list[tuple[str, uuid.UUID]] = []
         self.esperas: dict[uuid.UUID, timedelta] = {}
+
+    def relogio(self) -> float:
+        return self.agora
 
     async def reservar(self) -> list[EventoReservado]:
         return self._eventos
 
     async def publicar(self, evento: EventoReservado) -> ResultadoPublicacao:
         self.chamadas.append(("publicar", evento.evento_id))
+        self.agora += self._duracao_publicacao
         resultado = self._resultados[evento.evento_id]
         if isinstance(resultado, Exception):
             raise resultado
@@ -62,7 +75,7 @@ class _Portas:
         self.esperas[evento.evento_id] = espera
 
     def caso(self) -> PublicarPendentes:
-        return PublicarPendentes(self, self, self, POLITICA)
+        return PublicarPendentes(self, self, self, POLITICA, PRAZO, self.relogio)
 
     def _com(self, nome: str) -> list[uuid.UUID]:
         return [evento for chamada, evento in self.chamadas if chamada == nome]
@@ -203,3 +216,71 @@ def test_lote_vazio_nao_publica_nem_marca() -> None:
     assert portas.chamadas == []
     assert resumo.reservados == 0
     assert set(resumo.resultados.values()) == {0}
+
+
+def test_evento_sem_lease_para_uma_publicacao_inteira_fica_sem_tentativa(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Cada publicação leva o prazo inteiro do confirm (5 s): com 30 s de
+    # lease e 2 s de margem, cabem cinco; a sexta terminaria depois do lease.
+    eventos = [_evento(posicao) for posicao in range(1, 8)]
+    portas = _Portas(
+        eventos,
+        {e.evento_id: ResultadoPublicacao.CONFIRMADO for e in eventos},
+        duracao_publicacao=5.0,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="relay.publicacao"):
+        resumo = asyncio.run(portas.caso().executar())
+
+    assert portas.marcados == [e.evento_id for e in eventos[:5]]
+    # Sem tentativa e sem reagendamento: o lease vence e outra reserva pega.
+    assert portas.reagendados == []
+    assert resumo.reservados == 7
+    assert resumo.sem_tentativa == 2
+    assert resumo.resultados[ResultadoPublicacao.CONFIRMADO] == 5
+    (aviso,) = caplog.records
+    assert aviso.__dict__["sem_tentativa"] == 2
+    assert aviso.__dict__["posicao"] == 6
+
+
+def test_publicacao_que_passaria_do_lease_e_interrompida_e_reagendada() -> None:
+    evento = _evento(1)
+
+    class _BrokerParado(_Portas):
+        # Broker no ar sem confirmar (alarme de memória): a publicação não
+        # volta, e o prazo do próprio adaptador não ajuda.
+        async def publicar(self, evento: EventoReservado) -> ResultadoPublicacao:
+            await asyncio.sleep(60)
+            raise AssertionError("o ciclo deveria ter interrompido")
+
+    portas = _BrokerParado([evento], {})
+    prazo = PrazoReserva(
+        lease=timedelta(milliseconds=500),
+        publicacao=timedelta(milliseconds=100),
+        margem=timedelta(milliseconds=100),
+    )
+    caso = PublicarPendentes(portas, portas, portas, POLITICA, prazo)
+
+    resumo = asyncio.run(asyncio.wait_for(caso.executar(), timeout=5))
+
+    # Interrompida no restante do lease, como confirm fora do prazo.
+    assert resumo.resultados[ResultadoPublicacao.SEM_CONFIRMACAO] == 1
+    assert portas.reagendados == [evento.evento_id]
+    assert portas.marcados == []
+
+
+@pytest.mark.parametrize(
+    ("lease", "publicacao", "margem"),
+    [(5, 5, 0), (6, 5, 1), (30, 0, 2), (30, 5, -1)],
+    ids=["lease-igual-ao-confirm", "sem-folga", "confirm-zero", "margem-negativa"],
+)
+def test_prazo_que_nao_comporta_uma_publicacao_e_recusado(
+    lease: int, publicacao: int, margem: int
+) -> None:
+    with pytest.raises(ValueError):
+        PrazoReserva(
+            timedelta(seconds=lease),
+            timedelta(seconds=publicacao),
+            timedelta(seconds=margem),
+        )

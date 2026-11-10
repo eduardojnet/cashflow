@@ -177,3 +177,16 @@ def test_senha_ausente_impede_a_subida(ausente: str) -> None:
 def test_espera_nao_positiva_e_recusada() -> None:
     with pytest.raises(ValueError, match="RELAY_INTERVALO_SEGUNDOS"):
         ConfiguracaoRelay.de_ambiente({**AMBIENTE, "RELAY_INTERVALO_SEGUNDOS": "0"})
+
+
+def test_lease_que_nao_comporta_o_prazo_do_confirm_impede_a_subida() -> None:
+    # Lote publicado um a um: o lease precisa cobrir ao menos um confirm
+    # inteiro mais a margem, senão nenhum evento sairia (review 003, Issue 1).
+    with pytest.raises(ValueError, match="lease"):
+        ConfiguracaoRelay.de_ambiente(
+            {
+                **AMBIENTE,
+                "RELAY_LEASE_SEGUNDOS": "5",
+                "RELAY_TIMEOUT_CONFIRMACAO_SEGUNDOS": "5",
+            }
+        )

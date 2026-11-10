@@ -43,7 +43,7 @@ from relay.adaptadores.http import Prontidao
 from relay.adaptadores.metricas import MetricasRelay
 from relay.adaptadores.postgres import EstadoOutbox, FabricaConexao
 from relay.adaptadores.rabbitmq import PublicadorRabbitMQ
-from relay.aplicacao import PoliticaRetentativa, ResumoCiclo
+from relay.aplicacao import PoliticaRetentativa, PrazoReserva, ResumoCiclo
 
 COMPONENTE = "relay"
 
@@ -83,6 +83,16 @@ class ConfiguracaoRelay:
     health_porta: int = 8080
     metricas_porta: int = 9464
     prontidao_timeout_segundos: float = 2.0
+
+    def __post_init__(self) -> None:
+        # Falha na subida, não no primeiro lote (review 003, Issue 1).
+        self.prazo_reserva()
+
+    def prazo_reserva(self) -> PrazoReserva:
+        return PrazoReserva(
+            lease=self.lease,
+            publicacao=timedelta(seconds=self.timeout_confirmacao_segundos),
+        )
 
     @classmethod
     def de_ambiente(cls, ambiente: Mapping[str, str]) -> "ConfiguracaoRelay":
@@ -231,6 +241,7 @@ class LacoRelay:
                     "ciclo de publicação",
                     extra={
                         "reservados": resumo.reservados,
+                        "sem_tentativa": resumo.sem_tentativa,
                         **{r.value: n for r, n in resumo.resultados.items()},
                     },
                 )

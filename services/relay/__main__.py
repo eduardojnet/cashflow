@@ -52,6 +52,7 @@ async def executar(configuracao: ConfiguracaoRelay) -> None:
         publicador,
         RegistroPublicacaoPostgres(conexao),
         configuracao.politica,
+        configuracao.prazo_reserva(),
     )
     laco = LacoRelay(
         configuracao, ciclo, MedicaoOutboxPostgres(conexao), publicador, metricas_relay

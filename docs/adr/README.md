@@ -37,7 +37,7 @@ arquitetura: [`docs/arquitetura/`](../arquitetura/README.md).
 |-----|--------|--------|--------|
 | [ADR-001](ADR-001-servicos-independentes-bancos-exclusivos.md) | Serviços independentes com bancos exclusivos e integração assíncrona | Aceito | INFRA 2.1, 3.3; ST-TD-001; 001 TD-003 |
 | [ADR-002](ADR-002-arquitetura-hexagonal.md) | Arquitetura hexagonal | Aceito | INFRA 2.1; steering de convenções |
-| [ADR-003](ADR-003-outbox-transacional-e-relay.md) | Outbox transacional e relay | Aceito | INFRA 2.2, 3.1; ST-TD-002; 002 TD-001, TD-003, TD-004; 003 TD-001 a TD-004 |
+| [ADR-003](ADR-003-outbox-transacional-e-relay.md) | Outbox transacional e relay | Aceito | INFRA 2.2, 3.1; ST-TD-002; 002 TD-001, TD-003, TD-004; 003 TD-001 a TD-005 |
 | [ADR-004](ADR-004-rabbitmq-confirms-ack-apos-commit.md) | RabbitMQ com confirms, `mandatory` e ACK após commit; não é fonte de verdade | Aceito | INFRA §4; 003 TD-002; 004 TD-002 |
 | [ADR-005](ADR-005-inbox-deduplicacao-quarentena.md) | Inbox, deduplicação e quarentena | Aceito | INFRA 2.4; ST-TD-003; 004 TD-001, TD-003 |
 | [ADR-006](ADR-006-posicao-monotonica-e-checkpoint.md) | Posição monotônica e checkpoint | Aceito | 002 TD-002; 004 TD-006 |
@@ -85,6 +85,7 @@ em pelo menos um ADR.
 | 003 TD-002 | Publisher confirms + `mandatory` | ADR-003, ADR-004 |
 | 003 TD-003 | Retentativa com espera crescente | ADR-003 |
 | 003 TD-004 | Republicação por posição no lado do livro | ADR-003 (também ADR-007) |
+| 003 TD-005 | Orçamento do lease por evento do lote | ADR-003 |
 | 004 TD-001 | Inbox + contribuição única por geração e lançamento | ADR-005 |
 | 004 TD-002 | ACK após commit | ADR-004 |
 | 004 TD-003 | Quarentena no banco | ADR-005 |

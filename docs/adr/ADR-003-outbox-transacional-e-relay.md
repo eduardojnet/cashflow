@@ -143,6 +143,18 @@ RabbitMQ (INFRA 7.6; [ADR-007](ADR-007-geracoes-barreira-troca-atomica.md)).
 - Parâmetros por variável de ambiente, com padrão no compose: intervalo 1 s,
   lote 100, lease 30 s, prazo do confirm 5 s, espera base 1 s e teto 60 s
   (`RELAY_*`).
+- Orçamento do lease (003 TD-005, emenda de 2026-11-10 pela review da spec
+  003): o lease cobre o lote, mas os eventos saem um a um. Antes de cada
+  evento, o ciclo mede pelo relógio monotônico, a partir de antes da
+  reserva, quanto resta do lease menos 2 s de margem. Se não cabe uma
+  publicação inteira (o prazo do confirm), os restantes ficam sem tentativa
+  e voltam à reserva quando o lease vence; a publicação em curso é
+  interrompida no restante e tratada como confirm fora do prazo. Lease que
+  não comporta o prazo do confirm mais a margem impede a subida.
+  Alternativas rejeitadas: validar `lote × prazo do confirm < lease` na
+  subida, que obrigaria lease de 500 s ou lote de 5 com os padrões; e
+  renovar o lease durante o lote, que acrescenta uma escrita por evento e
+  ainda depende de o relay continuar vivo para renovar.
 - O `relay-republicar` roda sob o perfil `operacao` do compose.
 - Testes: [`services/relay/tests/`](../../services/relay/tests/) (reserva,
   publicação e republicação contra PostgreSQL e RabbitMQ reais) e

@@ -44,6 +44,7 @@ from relay.adaptadores.rabbitmq import EXCHANGE, ROUTING_KEY, PublicadorRabbitMQ
 from relay.aplicacao import (
     EventoReservado,
     PoliticaRetentativa,
+    PrazoReserva,
     PublicarPendentes,
     ResultadoPublicacao,
     ResumoCiclo,
@@ -239,6 +240,7 @@ def _ciclo(
                 publicador,
                 RegistroPublicacaoPostgres(_fabrica(livro, "livro_relay")),
                 POLITICA,
+                PrazoReserva(LEASE, timedelta(seconds=TIMEOUT_CONFIRMACAO)),
             )
             return await caso.executar(), publicador.no_confirm
 

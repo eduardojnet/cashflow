@@ -2,6 +2,7 @@
 
 from relay.aplicacao.publicar_pendentes import (
     EventoReservado,
+    PrazoReserva,
     Publicador,
     PublicarPendentes,
     RegistroPublicacao,
@@ -14,6 +15,7 @@ from relay.aplicacao.retentativa import PoliticaRetentativa
 __all__ = [
     "EventoReservado",
     "PoliticaRetentativa",
+    "PrazoReserva",
     "Publicador",
     "PublicarPendentes",
     "RegistroPublicacao",

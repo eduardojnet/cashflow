@@ -38,7 +38,12 @@ from relay.adaptadores.postgres import (
     ReservaOutboxPostgres,
 )
 from relay.adaptadores.rabbitmq import PublicadorRabbitMQ
-from relay.aplicacao import PoliticaRetentativa, PublicarPendentes, ResultadoPublicacao
+from relay.aplicacao import (
+    PoliticaRetentativa,
+    PrazoReserva,
+    PublicarPendentes,
+    ResultadoPublicacao,
+)
 from relay.comandos.republicar import main
 from relay.tests.integracao.rabbitmq_descartavel import (
     FILA,
@@ -48,7 +53,12 @@ from relay.tests.integracao.rabbitmq_descartavel import (
 
 SERVICOS = Path(__file__).resolve().parents[3]
 # Lease curto: o evento recém-publicado volta à reserva logo após reaberto.
-LEASE = timedelta(milliseconds=200)
+# Precisa comportar uma publicação inteira com margem (PrazoReserva).
+LEASE = timedelta(seconds=2)
+TIMEOUT_CONFIRMACAO = 1.0
+PRAZO = PrazoReserva(
+    LEASE, timedelta(seconds=TIMEOUT_CONFIRMACAO), timedelta(milliseconds=200)
+)
 POLITICA = PoliticaRetentativa(base=timedelta(minutes=1), teto=timedelta(minutes=4))
 
 pytestmark = pytest.mark.skipif(
@@ -139,7 +149,9 @@ async def _consumir(broker: Broker) -> list[aio_pika.abc.AbstractIncomingMessage
 
 def _ciclo(livro: Livro, broker: Broker) -> dict[ResultadoPublicacao, int]:
     async def executar() -> dict[ResultadoPublicacao, int]:
-        async with PublicadorRabbitMQ(broker.url("relay"), 10.0) as publicador:
+        async with PublicadorRabbitMQ(
+            broker.url("relay"), TIMEOUT_CONFIRMACAO
+        ) as publicador:
             caso = PublicarPendentes(
                 ReservaOutboxPostgres(
                     _fabrica(livro, "livro_relay"), "relay-teste", 100, LEASE
@@ -147,6 +159,7 @@ def _ciclo(livro: Livro, broker: Broker) -> dict[ResultadoPublicacao, int]:
                 publicador,
                 RegistroPublicacaoPostgres(_fabrica(livro, "livro_relay")),
                 POLITICA,
+                PRAZO,
             )
             return (await caso.executar()).resultados
 
